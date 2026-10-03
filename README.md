@@ -1,5 +1,8 @@
 # AI & Robotics Lab
 
+[![CI](https://github.com/StrawhatXYZ/ai-robotics-lab/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/StrawhatXYZ/ai-robotics-lab/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 A containerised ROS 2 simulation lab for building an **instructed grasp**
 system: a robot arm that picks up objects on spoken or written command,
 developed in simulation first.
