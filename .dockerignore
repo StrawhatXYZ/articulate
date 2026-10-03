@@ -1,0 +1,5 @@
+# The image only needs the ROS 2 sources and the desktop script.
+*
+!src/
+!scripts/
+src/**/__pycache__/

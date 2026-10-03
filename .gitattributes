@@ -1,0 +1,10 @@
+# Check out text files with LF line endings on every platform.
+#
+# The scripts, launch files and robot descriptions run inside the Linux
+# container (several via the ./src bind mount). With Git for Windows' default
+# core.autocrlf=true they would otherwise be checked out with CRLF endings,
+# and bash fails on them with "$'\r': command not found".
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary

@@ -1,0 +1,17 @@
+# colcon workspace output
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local tooling state
+.remember/
