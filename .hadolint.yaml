@@ -7,3 +7,6 @@ ignored:
   # Use --no-install-recommends. Recommended packages include the Mesa and
   # Qt components Gazebo and RViz need for software rendering.
   - DL3015
+  # ShellCheck "not following" a sourced file. /opt/ros/jazzy/setup.bash
+  # exists only inside the base image, so it cannot be followed statically.
+  - SC1091
