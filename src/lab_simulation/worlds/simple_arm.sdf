@@ -1,0 +1,276 @@
+<?xml version="1.0"?>
+<!--
+  simple_arm.sdf
+
+  Gazebo (SDF) description of the 3-DOF lab arm.
+
+  This is the model Gazebo simulates. simple_arm.urdf describes the same robot
+  for ROS (robot_state_publisher, RViz, MoveIt). The two files must agree on
+  link geometry, inertia, joint names, axes, origins and limits; the package
+  test `test/test_robot_description.py` enforces this.
+
+  The model is pose-neutral: its placement in a scene is set by the <include>
+  in the world file, and base_link is welded to the world at that pose.
+
+  Frame convention: every link frame sits on the joint that drives it, and the
+  link geometry is offset by half its length along +Z, so links stack end to
+  end.
+
+    base_link     cylinder  r=0.08  h=0.04   frame at the mounting surface
+    link_1        box       0.25 tall        joint_1 at base top, yaw (Z)
+    link_2        box       0.20 tall        joint_2 at link_1 top, pitch (Y)
+    link_3        box       0.15 tall        joint_3 at link_2 top, pitch (Y)
+    end_effector  sphere    r=0.025          fixed at the tip of link_3
+
+  Inertia tensors are those of the solid primitive about its centre of mass.
+-->
+<sdf version="1.8">
+  <model name="simple_arm">
+
+    <!-- Weld the base to the world at the pose given by the world <include>. -->
+    <joint name="world_joint" type="fixed">
+      <parent>world</parent>
+      <child>base_link</child>
+    </joint>
+
+    <link name="base_link">
+      <inertial>
+        <pose>0 0 0.02 0 0 0</pose>
+        <mass>2.0</mass>
+        <inertia>
+          <ixx>0.003467</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.003467</iyy><iyz>0</iyz><izz>0.0064</izz>
+        </inertia>
+      </inertial>
+      <visual name="base_visual">
+        <pose>0 0 0.02 0 0 0</pose>
+        <geometry><cylinder><radius>0.08</radius><length>0.04</length></cylinder></geometry>
+        <material>
+          <ambient>0.3 0.3 0.3 1</ambient>
+          <diffuse>0.3 0.3 0.3 1</diffuse>
+        </material>
+      </visual>
+      <collision name="base_collision">
+        <pose>0 0 0.02 0 0 0</pose>
+        <geometry><cylinder><radius>0.08</radius><length>0.04</length></cylinder></geometry>
+      </collision>
+    </link>
+
+    <joint name="joint_1" type="revolute">
+      <parent>base_link</parent>
+      <child>link_1</child>
+      <pose relative_to="base_link">0 0 0.04 0 0 0</pose>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-3.14159</lower>
+          <upper>3.14159</upper>
+          <effort>20</effort>
+          <velocity>2.0</velocity>
+        </limit>
+        <dynamics><damping>0.1</damping><friction>0.1</friction></dynamics>
+      </axis>
+    </joint>
+
+    <link name="link_1">
+      <pose relative_to="joint_1"/>
+      <inertial>
+        <pose>0 0 0.125 0 0 0</pose>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.005508</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.005508</iyy><iyz>0</iyz><izz>0.0006</izz>
+        </inertia>
+      </inertial>
+      <visual name="link_1_visual">
+        <pose>0 0 0.125 0 0 0</pose>
+        <geometry><box><size>0.06 0.06 0.25</size></box></geometry>
+        <material>
+          <ambient>0.1 0.3 0.8 1</ambient>
+          <diffuse>0.1 0.3 0.8 1</diffuse>
+        </material>
+      </visual>
+      <collision name="link_1_collision">
+        <pose>0 0 0.125 0 0 0</pose>
+        <geometry><box><size>0.06 0.06 0.25</size></box></geometry>
+      </collision>
+    </link>
+
+    <joint name="joint_2" type="revolute">
+      <parent>link_1</parent>
+      <child>link_2</child>
+      <pose relative_to="link_1">0 0 0.25 0 0 0</pose>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <lower>-1.5708</lower>
+          <upper>1.5708</upper>
+          <effort>15</effort>
+          <velocity>2.0</velocity>
+        </limit>
+        <dynamics><damping>0.1</damping><friction>0.1</friction></dynamics>
+      </axis>
+    </joint>
+
+    <link name="link_2">
+      <pose relative_to="joint_2"/>
+      <inertial>
+        <pose>0 0 0.10 0 0 0</pose>
+        <mass>0.8</mass>
+        <inertia>
+          <ixx>0.002833</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.002833</iyy><iyz>0</iyz><izz>0.0003333</izz>
+        </inertia>
+      </inertial>
+      <visual name="link_2_visual">
+        <pose>0 0 0.10 0 0 0</pose>
+        <geometry><box><size>0.05 0.05 0.20</size></box></geometry>
+        <material>
+          <ambient>0.1 0.7 0.2 1</ambient>
+          <diffuse>0.1 0.7 0.2 1</diffuse>
+        </material>
+      </visual>
+      <collision name="link_2_collision">
+        <pose>0 0 0.10 0 0 0</pose>
+        <geometry><box><size>0.05 0.05 0.20</size></box></geometry>
+      </collision>
+    </link>
+
+    <joint name="joint_3" type="revolute">
+      <parent>link_2</parent>
+      <child>link_3</child>
+      <pose relative_to="link_2">0 0 0.20 0 0 0</pose>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <lower>-1.5708</lower>
+          <upper>1.5708</upper>
+          <effort>10</effort>
+          <velocity>2.0</velocity>
+        </limit>
+        <dynamics><damping>0.1</damping><friction>0.1</friction></dynamics>
+      </axis>
+    </joint>
+
+    <link name="link_3">
+      <pose relative_to="joint_3"/>
+      <inertial>
+        <pose>0 0 0.075 0 0 0</pose>
+        <mass>0.5</mass>
+        <inertia>
+          <ixx>0.001004</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.001004</iyy><iyz>0</iyz><izz>0.0001333</izz>
+        </inertia>
+      </inertial>
+      <visual name="link_3_visual">
+        <pose>0 0 0.075 0 0 0</pose>
+        <geometry><box><size>0.04 0.04 0.15</size></box></geometry>
+        <material>
+          <ambient>0.8 0.1 0.1 1</ambient>
+          <diffuse>0.8 0.1 0.1 1</diffuse>
+        </material>
+      </visual>
+      <collision name="link_3_collision">
+        <pose>0 0 0.075 0 0 0</pose>
+        <geometry><box><size>0.04 0.04 0.15</size></box></geometry>
+      </collision>
+    </link>
+
+    <joint name="end_effector_joint" type="fixed">
+      <parent>link_3</parent>
+      <child>end_effector</child>
+      <pose relative_to="link_3">0 0 0.15 0 0 0</pose>
+    </joint>
+
+    <link name="end_effector">
+      <pose relative_to="end_effector_joint"/>
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.00005</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.00005</iyy><iyz>0</iyz><izz>0.00005</izz>
+        </inertia>
+      </inertial>
+      <visual name="end_effector_visual">
+        <geometry><sphere><radius>0.025</radius></sphere></geometry>
+        <material>
+          <ambient>0.9 0.9 0.1 1</ambient>
+          <diffuse>0.9 0.9 0.1 1</diffuse>
+        </material>
+      </visual>
+      <collision name="end_effector_collision">
+        <geometry><sphere><radius>0.025</radius></sphere></geometry>
+      </collision>
+    </link>
+
+    <!--
+      Joint state feedback. Publishes a gz.msgs.Model on
+      /world/<world>/model/simple_arm/joint_state, which ros_gz_bridge converts
+      to sensor_msgs/msg/JointState on /joint_states. The rate is capped so
+      feedback is not emitted on every 1 ms physics step.
+    -->
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <joint_name>joint_1</joint_name>
+      <joint_name>joint_2</joint_name>
+      <joint_name>joint_3</joint_name>
+      <update_rate>50</update_rate>
+    </plugin>
+
+    <!--
+      Joint position controllers, one per revolute joint. Each subscribes to a
+      gz.msgs.Double target on <topic> and holds the joint there with a PID
+      loop. The target is latched: a single command is enough to hold a pose.
+
+      <topic> is set explicitly because Gazebo's default name
+      (/model/simple_arm/joint/<joint>/0/cmd_pos) contains a segment starting
+      with a digit, which is not a valid ROS 2 topic name and so cannot be
+      bridged.
+
+      Gains are tuned per joint to its load, for near-critical damping
+      (d_gain ~ 2 * sqrt(p_gain * J), J = inertia about the joint axis).
+      joint_2 carries the whole forearm against gravity, so it needs the
+      stiffest loop. i_max / i_min bound the integral term so it can cancel
+      gravity without winding up; cmd_max / cmd_min clamp the total output to
+      the joint's effort limit.
+    -->
+    <plugin filename="gz-sim-joint-position-controller-system"
+            name="gz::sim::systems::JointPositionController">
+      <joint_name>joint_1</joint_name>
+      <topic>/simple_arm/joint_1/cmd_pos</topic>
+      <p_gain>50.0</p_gain>
+      <i_gain>5.0</i_gain>
+      <d_gain>3.0</d_gain>
+      <i_max>2.0</i_max>
+      <i_min>-2.0</i_min>
+      <cmd_max>20</cmd_max>
+      <cmd_min>-20</cmd_min>
+    </plugin>
+
+    <plugin filename="gz-sim-joint-position-controller-system"
+            name="gz::sim::systems::JointPositionController">
+      <joint_name>joint_2</joint_name>
+      <topic>/simple_arm/joint_2/cmd_pos</topic>
+      <p_gain>100.0</p_gain>
+      <i_gain>30.0</i_gain>
+      <d_gain>6.0</d_gain>
+      <i_max>5.0</i_max>
+      <i_min>-5.0</i_min>
+      <cmd_max>15</cmd_max>
+      <cmd_min>-15</cmd_min>
+    </plugin>
+
+    <plugin filename="gz-sim-joint-position-controller-system"
+            name="gz::sim::systems::JointPositionController">
+      <joint_name>joint_3</joint_name>
+      <topic>/simple_arm/joint_3/cmd_pos</topic>
+      <p_gain>50.0</p_gain>
+      <i_gain>15.0</i_gain>
+      <d_gain>1.5</d_gain>
+      <i_max>2.0</i_max>
+      <i_min>-2.0</i_min>
+      <cmd_max>10</cmd_max>
+      <cmd_min>-10</cmd_min>
+    </plugin>
+  </model>
+</sdf>
