@@ -1,0 +1,9 @@
+# Hadolint configuration. Each ignored rule is a deliberate decision.
+ignored:
+  # Pin versions in apt-get install. ROS 2 package versions are replaced on
+  # the apt mirror as new syncs land, so exact pins break builds within weeks.
+  # Reproducibility comes from the digest-pinned base image instead.
+  - DL3008
+  # Use --no-install-recommends. Recommended packages include the Mesa and
+  # Qt components Gazebo and RViz need for software rendering.
+  - DL3015

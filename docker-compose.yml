@@ -1,0 +1,30 @@
+services:
+  lab:
+    build: .
+    image: ai-robotics-lab:latest
+    # The osrf/ros desktop base image is published for amd64 only. Docker
+    # Desktop emulates it on Apple Silicon.
+    platform: linux/amd64
+    container_name: ai-robotics-lab
+    # Reap child processes (Gazebo, RViz) that exit while the container runs.
+    init: true
+    ports:
+      # Published on the loopback interface only: the VNC server has no
+      # password, so it must not be reachable from the local network.
+      - "127.0.0.1:6080:6080"   # noVNC in the browser: http://localhost:6080
+      - "127.0.0.1:5900:5900"   # native VNC clients:   vnc://localhost:5900
+    environment:
+      - DISPLAY=:1
+      - QT_X11_NO_MITSHM=1
+      # Isolates this lab's ROS 2 traffic from other ROS systems on the network.
+      - ROS_DOMAIN_ID=42
+      # Mesa llvmpipe software rendering, which provides the OpenGL level that
+      # Gazebo and RViz need without a GPU.
+      - LIBGL_ALWAYS_SOFTWARE=1
+    volumes:
+      # Live-edit the ROS 2 package from the host.
+      - ./src:/workspace/src
+    shm_size: "2g"
+    stdin_open: true
+    tty: true
+    command: bash -c "start-desktop.sh && exec sleep infinity"
