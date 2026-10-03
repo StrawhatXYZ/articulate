@@ -8,6 +8,13 @@ install(DIRECTORY config launch urdf worlds
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Scripts are installed as executables so they can be run with
+#   ros2 run lab_simulation <script>
+install(PROGRAMS
+  scripts/move_arm.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # Source files carry no per-file copyright headers; the license is declared
