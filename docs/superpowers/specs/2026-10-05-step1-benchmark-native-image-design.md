@@ -51,9 +51,15 @@ Gazebo 8.
 - `worlds/table_world.sdf`: the three pieces are moved inside the arm's
   reachable region (Section 4.2). Their sizes, masses and colours are
   unchanged.
-- `worlds/simple_arm.sdf`: one `DetachableJoint` per piece, parent
-  `end_effector`, child the piece's link, each with its own attach and detach
-  topics: `/simple_arm/suction/<piece>/attach` and `.../detach`.
+- Joint limits: `joint_2` (shoulder) and `joint_3` (elbow) widen from ±1.5708
+  to **±2.356 rad (±135°)** in `simple_arm.urdf`, `simple_arm.sdf` and
+  `move_arm.py`'s `JOINT_LIMITS`. With ±90° the table is unreachable
+  (Section 4.2). Link lengths, masses and the demo poses are unchanged.
+- Suction: one `DetachableJoint` per piece, parent `end_effector`, child the
+  piece's link, each with its own attach and detach topics
+  (`/simple_arm/suction/<piece>/attach` and `.../detach`). The plugins are
+  declared inside the world file's `<include>` of the arm, not in
+  `simple_arm.sdf`, so the arm model does not name this world's pieces.
 
 ### 3.3 Bridge (`config/bridge.yaml`)
 
@@ -103,13 +109,15 @@ unit-testable without a simulation.
 
 ### 4.2 Reachable region
 
-Pieces and targets are sampled only where IK succeeds for the required tip
-height, with a 1 cm margin to the IK limits. For the current geometry
-(shoulder at z = 1.04 m; reach to the tip centre between 0.25 m, at the elbow
-limit, and 0.35 m), the region common to all three pieces is a ring roughly
-0.19–0.26 m from the base axis. The sampler derives this from `kinematics.py`
-and does not hard-code it. Pieces keep at least 8 cm centre-to-centre
-separation.
+Pieces and targets are sampled only where IK succeeds, within joint limits,
+for both the grasp height and the hover height, with a 1 cm margin in every
+direction. The shoulder sits 0.29 m above the table, so reaching the table
+requires the shoulder to lean past horizontal: with ±90° limits no table
+position is reachable at all. With the ±135° limits of Section 3.2, the ring
+common to all three pieces is 0.12–0.27 m from the base axis (computed with
+the closed-form IK). The sampler derives this from `kinematics.py` and does
+not hard-code it; it also keeps pieces at least 0.12 m from the base axis
+(the base radius is 0.08 m) and at least 8 cm apart, centre to centre.
 
 ### 4.3 Reach task
 
@@ -144,7 +152,23 @@ retreat home, wait for the piece to settle.
 - Each trial is appended to `trials.jsonl` as it completes, so interrupted
   runs keep their data.
 
-### 4.6 Reproducibility
+### 4.6 Timing and simulation speed
+
+- The world file caps simulation at real time (`real_time_factor` 1.0), which
+  would hide any machine speed-up. The benchmark lifts the cap at start-up
+  through the `/world/table_world/set_physics` service with
+  `real_time_factor: 1000` (measured: `0` leaves the cap in place; `100`
+  reached 9.8× real time on the emulated image). Interactive launches keep
+  the real-time cap.
+- Robot timings (cycle time, settle time, step timeouts) are measured in
+  **simulation seconds**: they describe the robot and are identical on any
+  machine.
+- Throughput (trials per minute, achieved real-time factor) is measured in
+  **wall-clock time**: it describes the machine and image.
+- A separate wall-clock watchdog detects an unresponsive simulation (Section
+  4.5).
+
+### 4.7 Reproducibility
 
 The seed fully determines layouts, piece choice and targets. Physics may vary
 slightly between runs, so comparisons are made on aggregate rates, never on
@@ -228,7 +252,7 @@ change and the ratio. A success-rate change whose intervals overlap is marked
 |---|---|---|
 | `DetachableJoint` creates its joint at start-up (attached) | First implementation task is a probe | Detach all at start-up and re-attach on command if `attach_topic` is supported; otherwise carry kinematically (piece pose follows the tip via `set_pose` each step) with the same proximity and carry checks |
 | `set_pose` service not bridgeable in this ros_gz version | Same probe | Call `gz service` from the reset routine |
-| Reachable ring (~7 cm wide) too tight for three pieces plus targets | Sampler unit tests | Lengthen links in both descriptions (consistency test enforces both) or reduce piece count per layout |
+| Reachable ring (0.12–0.27 m) too tight for three pieces plus targets | Sampler unit tests (layouts must succeed for many seeds) | Reduce pieces per layout, or lengthen links in both descriptions (consistency test enforces both) |
 | Gazebo GUI still blank natively | Done criterion 6 | RViz remains the supported viewer; document it |
 | Native `ros-jazzy-desktop` build changes rendering or timing | Existing tests plus a `move_arm.py` run on the new image | Retune gains only if poses fail; record the change |
 
