@@ -62,3 +62,54 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
+
+  simulation:
+    name: Benchmark smoke test (headless simulation)
+    runs-on: ubuntu-24.04
+    container: ros:jazzy
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/ai-robotics-lab
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths src --ignore-src -y --rosdistro jazzy
+          apt-get install -y --no-install-recommends python3-colcon-common-extensions
+
+      - name: Build
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build
+
+      - name: Run benchmark (5 trials per task)
+        env:
+          LAB_GIT_COMMIT: ${{ github.sha }}
+          LAB_GIT_DIRTY: 'false'
+        run: |
+          source install/setup.bash
+          timeout 1800 ros2 launch lab_simulation benchmark.launch.py \
+            task:=all trials:=5 seed:=42 out:="$GITHUB_WORKSPACE/results"
+          python3 - <<'EOF'
+          import json, pathlib, sys
+          runs = sorted(pathlib.Path('results').glob('*/summary.json'))
+          if not runs:
+              sys.exit('no summary.json written')
+          summary = json.loads(runs[-1].read_text())
+          print(runs[-1].with_name('report.md').read_text())
+          sys.exit(0 if summary['run']['complete'] else 'benchmark did not complete')
+          EOF
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: results/
+          if-no-files-found: warn
