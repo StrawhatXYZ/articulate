@@ -70,17 +70,26 @@ desktop. It stays plain black until the simulation is launched, so start it
 next:
 
 ```bash
-# Terminal 1: start the simulation (Gazebo server, bridge, TF, RViz)
 ./enter-lab.sh
-ros2 launch lab_simulation arm_world.launch.py
-
-# Terminal 2: run the arm demonstration
-./enter-lab.sh
-ros2 run lab_simulation move_arm.py
+ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 rviz:=true realtime:=true
 ```
 
-RViz shows the arm stepping through five poses. The demo verifies each pose
-against `/joint_states` and exits with status 0 only if all were reached.
+RViz shows the arm picking pieces with its suction tip and placing them on
+random targets, at normal speed; each result is printed in the terminal.
+Ctrl-C stops it early.
+
+To check plain joint motion instead, start the simulation and, in a second
+terminal, run the five-pose joint check (it moves the arm only, it does not
+pick):
+
+```bash
+# Terminal 1                                  # Terminal 2
+./enter-lab.sh                                ./enter-lab.sh
+ros2 launch lab_simulation arm_world.launch.py   ros2 run lab_simulation move_arm.py
+```
+
+`move_arm.py` verifies each pose against `/joint_states` and exits with
+status 0 only if all were reached.
 
 ```bash
 ./stop-lab.sh           # stop and remove the container (image and ./src are kept)
@@ -175,7 +184,7 @@ TASK=pick_place TRIALS=10 ./run-benchmark.sh    # quick check
 | Task | What happens | Success means |
 |---|---|---|
 | `reach` | The tip moves to a random reachable point | Tip within 1 cm |
-| `pick_place` | Suction pick of a random piece, placed at a random target | Grasped within 5 mm, carried without separating (3 cm), placed within 2 cm |
+| `pick_place` | Suction pick of a random piece, placed at a random target | Grasped within 5 mm, held within 1 cm of the rigid-grip position while carried, placed upright within 2 cm |
 
 Failures are classified as `unreachable`, `grasp_miss`, `dropped`,
 `placement_error` or `timeout`. Success rates carry 95% Wilson intervals.
@@ -185,26 +194,31 @@ factor are wall-clock. The benchmark lifts Gazebo's real-time cap unless
 
 ### Step 1 baseline
 
-Seed 42, 100 trials per task, commit `dca2d0c`
+Seed 42, 100 trials per task, commit `3538fa7`
 ([`benchmarks/baseline/`](benchmarks/baseline/)):
 
 | | Native arm64 (Apple Silicon) | Emulated amd64 (previous image) |
 |---|---|---|
 | Reach success | 100% (95% CI 96–100%) | 100% (96–100%) |
-| Reach tip error, mean | 2.3 mm | 2.2 mm |
-| Pick-and-place success | **42%** (33–52%) | 43% (34–53%) |
-| Pick-and-place failures | dropped 37, placement error 21 | dropped 36, placement error 21 |
-| Pick-and-place cycle time, mean | 15.6 s | 15.6 s |
-| Real-time factor | 4.9× | 3.6× |
-| Trials per minute | **26.6** | 19.1 |
+| Reach tip error, mean | 2.4 mm | 2.2 mm |
+| Pick-and-place success | 84% (76–90%) | 83% (74–89%) |
+| Pick-and-place failures | placement error 15, dropped 1 | placement error 16, dropped 1 |
+| Pick-and-place cycle time, mean of successes | 15.6 s | 15.6 s |
+| Real-time factor | 4.4× | 3.5× |
+| Trials per minute | 22.2 | 17.4 |
 
-The native image runs the benchmark **1.4× faster** with the same results.
-Most pick failures happen during the carry: the 3-DOF arm sags under load,
-and a held piece sways or tilts on the compliant suction joint. These are the
-numbers later steps (SO-101 arm, ros2_control, MoveIt) are measured against.
+Results are the same on both images; the native image runs the benchmark
+**1.3× faster**. On the native run, 12 of the 15 placement errors landed just
+outside the 2 cm limit (2.1–3.0 cm) and 3 were the tall cylinder toppling: the
+3-DOF arm has no wrist, so a held piece tilts with the forearm and arrives
+tilted. Success by piece: green block 32/33, red cube 27/30, blue cylinder
+25/37. These are the numbers later steps (SO-101 arm, ros2_control, MoveIt)
+are measured against.
 
-Compare two runs (changes inside the confidence interval are marked
-"not significant"):
+Compare two runs. Success rates are tested for significance (overlapping 95%
+intervals read "not significant"); other rows have no test and read
+"not tested". Runs with different seeds, trial counts or task sets are
+flagged.
 
 ```bash
 docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros2 run lab_simulation benchmark.py compare /workspace/results/A /workspace/results/B'
@@ -371,11 +385,11 @@ Verified on 5 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 | Table world with arm and graspable objects | Working |
 | Arm welded to the table, links stacked end to end | Working |
 | Joint position control over ROS 2 topics | Working, smooth eased motion |
-| Suction pick-and-place, visible in RViz | Working, 42% success at baseline |
+| Suction pick-and-place, visible in RViz | Working, 84% success at baseline |
 | Seeded benchmark with committed baseline | Working (see `benchmarks/baseline/`) |
 | Gazebo GUI | Working natively |
 | `/joint_states`, TF and RViz model in the `world` frame | Working |
-| Test suite (unit, consistency, linters) | Working, 266 checks passing |
+| Test suite (unit, consistency, linters) | Working, 282 checks passing |
 | MoveIt plans and executes trajectories | Next milestone |
 
 Planned next steps:

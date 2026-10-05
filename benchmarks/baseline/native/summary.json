@@ -8,42 +8,45 @@
     "seed": 42,
     "complete": true,
     "unthrottled": true,
-    "wall_time_s": 450.83723220499996,
-    "sim_time_s": 2221.063,
-    "real_time_factor": 4.926529668228603,
-    "trials_per_minute": 26.61714504214569,
+    "wall_time_s": 540.4250933290004,
+    "sim_time_s": 2397.748,
+    "real_time_factor": 4.4367813959747,
+    "trials_per_minute": 22.20474242985351,
     "provenance": {
-      "git_commit": "dca2d0cfb29c01234109b38ff915efe29eec654e",
+      "git_commit": "3538fa75f85c5ead39f6a474f1b2b663cce39fd9",
       "git_dirty": "false",
       "arch": "aarch64",
       "ros_distro": "jazzy",
       "gazebo": "8.15.0",
-      "date": "2026-10-05T08:08:45+00:00"
+      "date": "2026-10-05T17:46:47+00:00"
     }
   },
   "tasks": {
     "pick_place": {
       "trials": 100,
-      "successes": 42,
-      "success_rate": 0.42,
+      "successes": 84,
+      "success_rate": 0.84,
       "success_ci": [
-        0.327982249185113,
-        0.5179369200110473
+        0.7557955544110557,
+        0.8990479765052628
       ],
       "cycle_time_s": {
-        "mean": 15.564666666666612,
-        "median": 14.973000000000013,
-        "p95": 22.292199999999973
+        "n": 84,
+        "mean": 15.564226190476157,
+        "median": 14.865499999999997,
+        "p95": 21.62835000000009
       },
       "error_m": {
-        "mean": 0.018859839999179125,
-        "p95": 0.04154298992347868
+        "n": 99,
+        "mean": 0.010510592300921866,
+        "median": 0.007086784668352532,
+        "p95": 0.024881433082243304
       },
       "failures": {
-        "dropped": 37,
-        "placement_error": 21
+        "dropped": 1,
+        "placement_error": 15
       },
-      "disturbed": 15
+      "disturbed": 24
     },
     "reach": {
       "trials": 100,
@@ -54,13 +57,16 @@
         0.9999999999999999
       ],
       "cycle_time_s": {
-        "mean": 3.4821099999999854,
-        "median": 3.5355000000000096,
-        "p95": 4.916449999999986
+        "n": 100,
+        "mean": 3.4829999999999837,
+        "median": 3.5409999999999595,
+        "p95": 4.9143999999999775
       },
       "error_m": {
-        "mean": 0.0022512753962669564,
-        "p95": 0.004496678510648922
+        "n": 100,
+        "mean": 0.002357813769125439,
+        "median": 0.002029807979802325,
+        "p95": 0.004656460530965619
       },
       "failures": {},
       "disturbed": 0
