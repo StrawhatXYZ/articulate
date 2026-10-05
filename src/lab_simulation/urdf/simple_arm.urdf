@@ -25,11 +25,10 @@
 -->
 <robot name="simple_arm">
 
-  <material name="dark_gray"><color rgba="0.3 0.3 0.3 1.0"/></material>
-  <material name="blue"><color rgba="0.1 0.3 0.8 1.0"/></material>
-  <material name="green"><color rgba="0.1 0.7 0.2 1.0"/></material>
-  <material name="red"><color rgba="0.8 0.1 0.1 1.0"/></material>
-  <material name="yellow"><color rgba="0.9 0.9 0.1 1.0"/></material>
+  <!-- Industrial scheme: graphite base and column, safety-orange arm, white tip. -->
+  <material name="graphite"><color rgba="0.2 0.2 0.22 1.0"/></material>
+  <material name="safety_orange"><color rgba="1.0 0.45 0.0 1.0"/></material>
+  <material name="white"><color rgba="0.95 0.95 0.95 1.0"/></material>
 
   <!-- Massless root frame. Must match the arm's <include> pose in table_world.sdf. -->
   <link name="world"/>
@@ -45,7 +44,7 @@
     <visual>
       <origin xyz="0 0 0.02" rpy="0 0 0"/>
       <geometry><cylinder radius="0.08" length="0.04"/></geometry>
-      <material name="dark_gray"/>
+      <material name="graphite"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.02" rpy="0 0 0"/>
@@ -72,7 +71,7 @@
     <visual>
       <origin xyz="0 0 0.125" rpy="0 0 0"/>
       <geometry><box size="0.06 0.06 0.25"/></geometry>
-      <material name="blue"/>
+      <material name="graphite"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.125" rpy="0 0 0"/>
@@ -99,7 +98,7 @@
     <visual>
       <origin xyz="0 0 0.10" rpy="0 0 0"/>
       <geometry><box size="0.05 0.05 0.20"/></geometry>
-      <material name="green"/>
+      <material name="safety_orange"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.10" rpy="0 0 0"/>
@@ -126,7 +125,7 @@
     <visual>
       <origin xyz="0 0 0.075" rpy="0 0 0"/>
       <geometry><box size="0.04 0.04 0.15"/></geometry>
-      <material name="red"/>
+      <material name="safety_orange"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.075" rpy="0 0 0"/>
@@ -149,7 +148,7 @@
   <link name="end_effector">
     <visual>
       <geometry><sphere radius="0.025"/></geometry>
-      <material name="yellow"/>
+      <material name="white"/>
     </visual>
     <collision>
       <geometry><sphere radius="0.025"/></geometry>

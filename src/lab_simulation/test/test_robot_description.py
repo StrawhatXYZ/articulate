@@ -274,3 +274,32 @@ def test_suction_state_is_published_and_bridged(name):
     assert (entry['ros_type_name'], entry['gz_type_name']) == (
         'std_msgs/msg/String', 'gz.msgs.StringMsg')
     assert entry['direction'] == 'GZ_TO_ROS'
+
+
+GRAPHITE = (0.2, 0.2, 0.22, 1.0)
+SAFETY_ORANGE = (1.0, 0.45, 0.0, 1.0)
+WHITE = (0.95, 0.95, 0.95, 1.0)
+
+
+def urdf_link_colour(name):
+    named = {m.get('name'): floats(m.find('color').get('rgba'))
+             for m in URDF.findall('material') if m.find('color') is not None}
+    return named[urdf_links()[name].find('visual/material').get('name')]
+
+
+def sdf_link_colour(name):
+    return floats(sdf_links()[name].find('visual/material/diffuse').text)
+
+
+@pytest.mark.parametrize('name', sorted(set(urdf_links()) - {'world'}))
+def test_link_colours_match_between_rviz_and_gazebo(name):
+    assert urdf_link_colour(name) == pytest.approx(sdf_link_colour(name))
+    ambient = floats(sdf_links()[name].find('visual/material/ambient').text)
+    assert ambient == pytest.approx(sdf_link_colour(name))
+
+
+def test_arm_uses_the_industrial_colour_scheme():
+    scheme = {'base_link': GRAPHITE, 'link_1': GRAPHITE, 'link_2': SAFETY_ORANGE,
+              'link_3': SAFETY_ORANGE, 'end_effector': WHITE}
+    for name, colour in scheme.items():
+        assert urdf_link_colour(name) == pytest.approx(colour), name

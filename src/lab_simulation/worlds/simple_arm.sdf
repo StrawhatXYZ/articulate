@@ -48,8 +48,8 @@
         <pose>0 0 0.02 0 0 0</pose>
         <geometry><cylinder><radius>0.08</radius><length>0.04</length></cylinder></geometry>
         <material>
-          <ambient>0.3 0.3 0.3 1</ambient>
-          <diffuse>0.3 0.3 0.3 1</diffuse>
+          <ambient>0.2 0.2 0.22 1</ambient>
+          <diffuse>0.2 0.2 0.22 1</diffuse>
         </material>
       </visual>
       <collision name="base_collision">
@@ -88,8 +88,8 @@
         <pose>0 0 0.125 0 0 0</pose>
         <geometry><box><size>0.06 0.06 0.25</size></box></geometry>
         <material>
-          <ambient>0.1 0.3 0.8 1</ambient>
-          <diffuse>0.1 0.3 0.8 1</diffuse>
+          <ambient>0.2 0.2 0.22 1</ambient>
+          <diffuse>0.2 0.2 0.22 1</diffuse>
         </material>
       </visual>
       <collision name="link_1_collision">
@@ -128,8 +128,8 @@
         <pose>0 0 0.10 0 0 0</pose>
         <geometry><box><size>0.05 0.05 0.20</size></box></geometry>
         <material>
-          <ambient>0.1 0.7 0.2 1</ambient>
-          <diffuse>0.1 0.7 0.2 1</diffuse>
+          <ambient>1.0 0.45 0.0 1</ambient>
+          <diffuse>1.0 0.45 0.0 1</diffuse>
         </material>
       </visual>
       <collision name="link_2_collision">
@@ -168,8 +168,8 @@
         <pose>0 0 0.075 0 0 0</pose>
         <geometry><box><size>0.04 0.04 0.15</size></box></geometry>
         <material>
-          <ambient>0.8 0.1 0.1 1</ambient>
-          <diffuse>0.8 0.1 0.1 1</diffuse>
+          <ambient>1.0 0.45 0.0 1</ambient>
+          <diffuse>1.0 0.45 0.0 1</diffuse>
         </material>
       </visual>
       <collision name="link_3_collision">
@@ -196,8 +196,8 @@
       <visual name="end_effector_visual">
         <geometry><sphere><radius>0.025</radius></sphere></geometry>
         <material>
-          <ambient>0.9 0.9 0.1 1</ambient>
-          <diffuse>0.9 0.9 0.1 1</diffuse>
+          <ambient>0.95 0.95 0.95 1</ambient>
+          <diffuse>0.95 0.95 0.95 1</diffuse>
         </material>
       </visual>
       <collision name="end_effector_collision">
