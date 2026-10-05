@@ -6,6 +6,7 @@ Starts:
   2. ros_gz_bridge for /clock, /joint_states and the joint position commands
   3. robot_state_publisher, which turns /joint_states into TF
   4. RViz 2 with the arm display configuration (optional)
+  5. Piece markers for RViz (object_markers)
 
 Usage:
   ros2 launch lab_simulation arm_world.launch.py
@@ -16,9 +17,11 @@ Usage:
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from lab_simulation.layout import PIECES
 from launch import LaunchDescription
 from launch.actions import AppendEnvironmentVariable
 from launch.actions import DeclareLaunchArgument
+from launch.actions import ExecuteProcess
 from launch.actions import IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
@@ -101,6 +104,23 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('rviz')),
         output='screen')
 
+    object_markers = Node(
+        package='lab_simulation',
+        executable='object_markers.py',
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen')
+
+    # DetachableJoint attaches at start-up, so release every piece. Wait until
+    # each suction plugin is subscribed (Gazebo load time varies by machine);
+    # a message sent earlier would be lost.
+    release_suction = [
+        ExecuteProcess(
+            cmd=['bash', '-c',
+                 f'for _ in $(seq 1 60); do gz topic -i -t {topic} | grep -q tcp && break;'
+                 f' sleep 1; done; gz topic -t {topic} -m gz.msgs.Empty -p ""'],
+            output='log')
+        for topic in (f'/simple_arm/suction/{name}/detach' for name in sorted(PIECES))]
+
     return LaunchDescription([
         *declare_args,
         resource_path,
@@ -109,4 +129,6 @@ def generate_launch_description():
         bridge,
         robot_state_publisher,
         rviz,
+        object_markers,
+        *release_suction,
     ])
