@@ -1,0 +1,69 @@
+{
+  "run": {
+    "tasks": [
+      "reach",
+      "pick_place"
+    ],
+    "trials_per_task": 100,
+    "seed": 42,
+    "complete": true,
+    "unthrottled": true,
+    "wall_time_s": 450.83723220499996,
+    "sim_time_s": 2221.063,
+    "real_time_factor": 4.926529668228603,
+    "trials_per_minute": 26.61714504214569,
+    "provenance": {
+      "git_commit": "dca2d0cfb29c01234109b38ff915efe29eec654e",
+      "git_dirty": "false",
+      "arch": "aarch64",
+      "ros_distro": "jazzy",
+      "gazebo": "8.15.0",
+      "date": "2026-10-05T08:08:45+00:00"
+    }
+  },
+  "tasks": {
+    "pick_place": {
+      "trials": 100,
+      "successes": 42,
+      "success_rate": 0.42,
+      "success_ci": [
+        0.327982249185113,
+        0.5179369200110473
+      ],
+      "cycle_time_s": {
+        "mean": 15.564666666666612,
+        "median": 14.973000000000013,
+        "p95": 22.292199999999973
+      },
+      "error_m": {
+        "mean": 0.018859839999179125,
+        "p95": 0.04154298992347868
+      },
+      "failures": {
+        "dropped": 37,
+        "placement_error": 21
+      },
+      "disturbed": 15
+    },
+    "reach": {
+      "trials": 100,
+      "successes": 100,
+      "success_rate": 1.0,
+      "success_ci": [
+        0.9630051925239981,
+        0.9999999999999999
+      ],
+      "cycle_time_s": {
+        "mean": 3.4821099999999854,
+        "median": 3.5355000000000096,
+        "p95": 4.916449999999986
+      },
+      "error_m": {
+        "mean": 0.0022512753962669564,
+        "p95": 0.004496678510648922
+      },
+      "failures": {},
+      "disturbed": 0
+    }
+  }
+}

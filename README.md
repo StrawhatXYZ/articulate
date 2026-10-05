@@ -7,8 +7,9 @@ A containerised ROS 2 simulation lab for building an **instructed grasp**
 system: a robot arm that picks up objects on spoken or written command,
 developed in simulation first.
 
-Phase 1 provides a 3-DOF arm on a table with graspable objects in Gazebo,
-bridged to ROS 2 and visualised in RViz. Everything runs inside Docker and is
+Phase 1 provides a 3-DOF arm with a simulated suction gripper on a table with
+graspable objects in Gazebo, bridged to ROS 2 and visualised in RViz, plus a
+seeded benchmark that measures reach and pick-and-place performance. Everything runs inside Docker and is
 viewed in a web browser, so no host-side ROS, X server or GPU is required.
 
 | Component | Version | Role |
@@ -27,13 +28,13 @@ viewed in a web browser, so no host-side ROS, X server or GPU is required.
 
 | Host | Support |
 |---|---|
-| macOS, Apple Silicon | Verified. Runs under amd64 emulation: slower, but fully functional. |
+| macOS, Apple Silicon | Verified. Runs natively (arm64). |
 | macOS, Intel | Expected to work natively. |
 | Linux, x86-64 | Expected to work natively. |
 | Windows 10/11, x86-64 | Expected to work natively through WSL 2 (see [Windows](#windows)). |
 
-The base image `osrf/ros:jazzy-desktop` is published for `linux/amd64` only,
-so x86-64 hosts run it natively and Apple Silicon hosts emulate it.
+The image is built on the multi-architecture `ros:jazzy` base, so it runs
+natively on both arm64 and x86-64 hosts.
 
 ### Windows
 
@@ -96,7 +97,7 @@ ros2 launch lab_simulation arm_world.launch.py [argument:=value ...]
 | Argument | Default | Description |
 |---|---|---|
 | `rviz` | `true` | Start RViz 2 with the preconfigured arm view |
-| `gz_gui` | `false` | Also start the Gazebo GUI. It does not render on Apple Silicon (see Troubleshooting). |
+| `gz_gui` | `false` | Also start the Gazebo GUI. It uses several CPU cores under software rendering, so RViz is the lighter viewer. |
 | `use_sim_time` | `true` | Drive ROS nodes from the Gazebo `/clock` |
 
 ### Commanding joints directly
@@ -109,6 +110,18 @@ ros2 topic pub --once /simple_arm/joint_2/cmd_pos std_msgs/msg/Float64 "{data: 0
 ros2 topic echo /joint_states
 ```
 
+### Watching a pick
+
+RViz shows the table and the pieces at their live positions. To watch the arm
+pick and place pieces at normal speed, run inside the container:
+
+```bash
+ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 rviz:=true realtime:=true
+```
+
+and open <http://localhost:6080>. Without `realtime:=true` the benchmark runs
+several times faster than real time.
+
 ### Running the tests
 
 ```bash
@@ -118,6 +131,8 @@ colcon test-result --verbose
 ```
 
 The suite runs the ROS 2 linters (flake8, pep257, xmllint, lint_cmake) and
+the pytest files in `test/`: unit tests for the kinematics, layout sampling,
+metrics, tasks, arm motion and benchmark runner, and
 `test/test_robot_description.py`, which checks that:
 
 - the URDF and SDF agree on every link and joint (geometry, inertia, origins,
@@ -126,7 +141,9 @@ The suite runs the ROS 2 linters (flake8, pep257, xmllint, lint_cmake) and
 - the arm's placement in the world matches the URDF;
 - every joint controller topic is bridged and its output is clamped to the
   joint's effort limit;
-- the demo sequence stays within the URDF joint limits.
+- the demo sequence stays within the URDF joint limits;
+- every piece publishes its pose, and its suction joint and topics are wired
+  through the bridge.
 
 ### Continuous integration
 
@@ -138,6 +155,60 @@ request:
 - **Lint** runs ShellCheck on the shell scripts and Hadolint on the
   Dockerfile. Rules ignored on purpose are listed, with reasons, in
   `.hadolint.yaml`.
+- **Benchmark smoke test** runs 5 trials per task in a headless simulation and
+  uploads the report as the `benchmark-report` artifact.
+
+`.github/workflows/docker.yml` builds the image whenever the `Dockerfile`, the
+compose file, the scripts or the package change.
+
+## Benchmark
+
+`run-benchmark.sh` runs seeded trials against a headless simulation and writes
+`results/<date-time>/` containing `trials.jsonl`, `summary.json` and
+`report.md`.
+
+```bash
+./run-benchmark.sh                              # both tasks, 100 trials each, seed 42
+TASK=pick_place TRIALS=10 ./run-benchmark.sh    # quick check
+```
+
+| Task | What happens | Success means |
+|---|---|---|
+| `reach` | The tip moves to a random reachable point | Tip within 1 cm |
+| `pick_place` | Suction pick of a random piece, placed at a random target | Grasped within 5 mm, carried without separating (3 cm), placed within 2 cm |
+
+Failures are classified as `unreachable`, `grasp_miss`, `dropped`,
+`placement_error` or `timeout`. Success rates carry 95% Wilson intervals.
+Robot timings are in simulation seconds; trials per minute and real-time
+factor are wall-clock. The benchmark lifts Gazebo's real-time cap unless
+`realtime:=true`.
+
+### Step 1 baseline
+
+Seed 42, 100 trials per task, commit `dca2d0c`
+([`benchmarks/baseline/`](benchmarks/baseline/)):
+
+| | Native arm64 (Apple Silicon) | Emulated amd64 (previous image) |
+|---|---|---|
+| Reach success | 100% (95% CI 96–100%) | 100% (96–100%) |
+| Reach tip error, mean | 2.3 mm | 2.2 mm |
+| Pick-and-place success | **42%** (33–52%) | 43% (34–53%) |
+| Pick-and-place failures | dropped 37, placement error 21 | dropped 36, placement error 21 |
+| Pick-and-place cycle time, mean | 15.6 s | 15.6 s |
+| Real-time factor | 4.9× | 3.6× |
+| Trials per minute | **26.6** | 19.1 |
+
+The native image runs the benchmark **1.4× faster** with the same results.
+Most pick failures happen during the carry: the 3-DOF arm sags under load,
+and a held piece sways or tilts on the compliant suction joint. These are the
+numbers later steps (SO-101 arm, ros2_control, MoveIt) are measured against.
+
+Compare two runs (changes inside the confidence interval are marked
+"not significant"):
+
+```bash
+docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros2 run lab_simulation benchmark.py compare /workspace/results/A /workspace/results/B'
+```
 
 ## Architecture
 
@@ -166,6 +237,11 @@ request:
 | `/clock` | `rosgraph_msgs/msg/Clock` | Gazebo → ROS | Simulation time |
 | `/tf`, `/tf_static` | `tf2_msgs/msg/TFMessage` | ROS | Frames `world` → `base_link` → … → `end_effector` |
 | `/robot_description` | `std_msgs/msg/String` | ROS | URDF, latched |
+| `/lab/pieces/<piece>/pose` | `geometry_msgs/msg/PoseStamped` | Gazebo → ROS | Live world pose of each piece |
+| `/simple_arm/suction/<piece>/{attach,detach}` | `std_msgs/msg/Empty` | ROS → Gazebo | Engage or release suction on a piece |
+| `/simple_arm/suction/<piece>/state` | `std_msgs/msg/String` | Gazebo → ROS | Suction state: `attached` or `detached` |
+| `/lab/piece_markers` | `visualization_msgs/msg/MarkerArray` | ROS | Table and pieces for RViz |
+| `/world/table_world/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | service | Teleport a piece (benchmark resets) |
 
 The bridge mapping lives in `config/bridge.yaml`.
 
@@ -184,27 +260,37 @@ The test suite fails if the two drift apart. The arm itself:
 | Joint | Type | Axis | Range (rad) | Effort (N·m) | Link driven | Length |
 |---|---|---|---|---|---|---|
 | `joint_1` | revolute | Z (base yaw) | ±π | 20 | `link_1` | 0.25 m |
-| `joint_2` | revolute | Y (shoulder pitch) | ±π/2 | 15 | `link_2` | 0.20 m |
-| `joint_3` | revolute | Y (elbow pitch) | ±π/2 | 10 | `link_3` | 0.15 m |
+| `joint_2` | revolute | Y (shoulder pitch) | ±3π/4 (±135°) | 15 | `link_2` | 0.20 m |
+| `joint_3` | revolute | Y (elbow pitch) | ±3π/4 (±135°) | 10 | `link_3` | 0.15 m |
 
 Each link frame sits on the joint that drives it, with geometry offset by half
 the link length, so links stack end to end. `base_link` is welded to the table
 top at z = 0.75 m. The controllers' PID gains are tuned per joint to the load
 each one carries. Inertias are computed from each link's solid primitive.
+The shoulder sits 0.29 m above the table, so reaching the table needs the
+shoulder and elbow to lean past horizontal: hence the ±135° range.
 
-The table holds three 100 g objects (a red cube, a blue cylinder and a green
-sphere) as grasp targets.
+The table holds three flat-topped 100 g pieces (a red cube, a blue cylinder
+and a green block) as grasp targets. Suction is simulated with one Gazebo
+`DetachableJoint` per piece, declared in the world file. It engages only when
+the tip is within 5 mm of a piece's top, and the code waits for the plugin to
+confirm `attached` or `detached`.
 
 ## Project structure
 
 ```
 ai-robotics-lab/
-├── .github/workflows/ci.yml   # Build, test and lint on every push and pull request
+├── .github/workflows/
+│   ├── ci.yml                 # Build, test, lint and benchmark smoke test
+│   └── docker.yml             # Image build check
 ├── Dockerfile                 # ROS 2 Jazzy + Gazebo + MoveIt 2 + virtual desktop
 ├── docker-compose.yml         # Container definition, ports and volumes
 ├── start-lab.sh               # Build and start everything
 ├── enter-lab.sh               # Interactive shell in the running container
 ├── stop-lab.sh                # Stop and remove the container
+├── run-benchmark.sh           # Run the benchmark in the container; results in ./results/
+├── benchmarks/
+│   └── baseline/              # Committed step 1 baseline (native, emulated, comparison)
 ├── LICENSE                    # Apache License 2.0
 ├── NOTICE                     # Copyright notice
 ├── scripts/
@@ -216,12 +302,23 @@ ai-robotics-lab/
         ├── config/
         │   ├── arm.rviz           # RViz display configuration
         │   └── bridge.yaml        # ros_gz_bridge topic map
+        ├── lab_simulation/        # Python package
+        │   ├── kinematics.py      # Closed-form forward and inverse kinematics
+        │   ├── layout.py          # Piece geometry and seeded sampling
+        │   ├── tasks.py           # Reach and pick-and-place trials
+        │   ├── metrics.py         # Statistics, reports and comparisons
+        │   ├── arm.py             # Smooth joint motion and settle detection
+        │   ├── scene.py           # Piece poses, suction and scene reset
+        │   ├── object_markers.py  # RViz markers for the table and pieces
+        │   └── benchmark.py       # Benchmark command line
         ├── launch/
-        │   └── arm_world.launch.py
+        │   ├── arm_world.launch.py
+        │   └── benchmark.launch.py
         ├── scripts/
-        │   └── move_arm.py        # Scripted, self-verifying joint demo
-        ├── test/
-        │   └── test_robot_description.py
+        │   ├── benchmark.py       # Entry point: run, report, compare
+        │   ├── move_arm.py        # Scripted, self-verifying joint demo
+        │   └── object_markers.py  # Entry point: RViz piece markers
+        ├── test/                  # Unit and consistency tests (pytest)
         ├── urdf/
         │   └── simple_arm.urdf    # Robot description for ROS
         └── worlds/
@@ -262,20 +359,23 @@ The comment there explains how to update it.
 | <http://localhost:6080> does not load | Run `docker logs ai-robotics-lab`. Restart with `./stop-lab.sh && ./start-lab.sh`. |
 | `move_arm.py` stays on "waiting for /joint_states" | The simulation is not running. Start the launch file in another terminal first. |
 | `move_arm.py` reports a pose "not reached" | The sim may be running slowly. Check the real-time factor with `gz topic -e -t /world/table_world/stats`. |
-| Gazebo GUI (`gz_gui:=true`) stays blank | Known limitation on Apple Silicon: the Gazebo GUI does not render under amd64 emulation with software OpenGL, with either the `ogre2` or `ogre` engine. Use RViz, the supported viewer. The native arm64 image on the roadmap is expected to fix this. |
+| `run-benchmark.sh` says a simulation is already running | Stop the interactive launch first (Ctrl-C, or `./stop-lab.sh && ./start-lab.sh`): two simulations would share topics. |
 
 ## Status and roadmap
 
-Verified on 3 October 2026 on Apple Silicon with Docker Desktop.
+Verified on 5 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 
 | Capability | Status |
 |---|---|
 | Reproducible container with browser-based desktop | Working |
 | Table world with arm and graspable objects | Working |
 | Arm welded to the table, links stacked end to end | Working |
-| Joint position control over ROS 2 topics | Working, all poses within 0.05 rad |
+| Joint position control over ROS 2 topics | Working, smooth eased motion |
+| Suction pick-and-place, visible in RViz | Working, 42% success at baseline |
+| Seeded benchmark with committed baseline | Working (see `benchmarks/baseline/`) |
+| Gazebo GUI | Working natively |
 | `/joint_states`, TF and RViz model in the `world` frame | Working |
-| URDF/SDF consistency test suite | Working, 32 tests passing |
+| Test suite (unit, consistency, linters) | Working, 266 checks passing |
 | MoveIt plans and executes trajectories | Next milestone |
 
 Planned next steps:
@@ -287,8 +387,6 @@ Planned next steps:
    pipeline) and plan collision-aware motions.
 3. **Gripper and camera.** Add a gripper at `end_effector` and an RGB-D camera
    overlooking the table.
-4. **Native arm64 image.** Build on the multi-architecture `ros:jazzy` image to
-   avoid emulation on Apple Silicon.
 
 ### The pipeline
 
