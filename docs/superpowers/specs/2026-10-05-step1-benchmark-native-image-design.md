@@ -51,6 +51,10 @@ Gazebo 8.
 - `worlds/table_world.sdf`: the three pieces are moved inside the arm's
   reachable region (Section 4.2). Their sizes, masses and colours are
   unchanged.
+- Pose publishing: each piece model carries a `PosePublisher` system that
+  publishes its world pose on `/model/<piece>/pose`. (Verified in the step 1
+  probe: Gazebo's combined `dynamic_pose/info` stream loses entity names when
+  bridged to `TFMessage`, so it cannot identify pieces.)
 - Joint limits: `joint_2` (shoulder) and `joint_3` (elbow) widen from ±1.5708
   to **±2.356 rad (±135°)** in `simple_arm.urdf`, `simple_arm.sdf` and
   `move_arm.py`'s `JOINT_LIMITS`. With ±90° the table is unreachable
@@ -65,7 +69,7 @@ Gazebo 8.
 
 | ROS | Gazebo | Direction | Purpose |
 |---|---|---|---|
-| `/world/table_world/dynamic_pose` (`tf2_msgs/msg/TFMessage`) | `/world/table_world/dynamic_pose/info` (`gz.msgs.Pose_V`) | GZ→ROS | Live piece poses |
+| `/lab/pieces/<piece>/pose` (`geometry_msgs/msg/PoseStamped`) | `/model/<piece>/pose` (`gz.msgs.Pose`) | GZ→ROS | Live pose of each piece |
 | `/simple_arm/suction/<piece>/attach` (`std_msgs/msg/Empty`) | same (`gz.msgs.Empty`) | ROS→GZ | Engage suction |
 | `/simple_arm/suction/<piece>/detach` (`std_msgs/msg/Empty`) | same (`gz.msgs.Empty`) | ROS→GZ | Release suction |
 | `/world/table_world/set_pose` (`ros_gz_interfaces/srv/SetEntityPose`) | `/world/table_world/set_pose` | service | Scene reset |

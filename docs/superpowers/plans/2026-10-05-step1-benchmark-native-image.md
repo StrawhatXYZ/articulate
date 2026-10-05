@@ -69,8 +69,8 @@ Process-management commands must be run from script files or with `docker exec -
 | `src/lab_simulation/scripts/move_arm.py` | modify | Widened `JOINT_LIMITS` |
 | `src/lab_simulation/urdf/simple_arm.urdf` | modify | Widened limits |
 | `src/lab_simulation/worlds/simple_arm.sdf` | modify | Widened limits |
-| `src/lab_simulation/worlds/table_world.sdf` | modify | Pieces inside reach; suction plugins in the arm `<include>` |
-| `src/lab_simulation/config/bridge.yaml` | modify | Poses, suction topics, `set_pose` service |
+| `src/lab_simulation/worlds/table_world.sdf` | modify | Pieces inside reach; a pose publisher per piece; suction plugins in the arm `<include>` |
+| `src/lab_simulation/config/bridge.yaml` | modify | Per-piece pose topics, suction topics, `set_pose` service |
 | `src/lab_simulation/config/arm.rviz` | modify | MarkerArray display |
 | `src/lab_simulation/launch/arm_world.launch.py` | modify | Start `object_markers`; release suction at start-up if needed |
 | `src/lab_simulation/launch/benchmark.launch.py` | create | Headless simulation plus benchmark, shut down when done |
@@ -1454,8 +1454,8 @@ git commit -m "feat(tasks): add reach and suction pick-and-place trials with fai
 - Modify: `src/lab_simulation/test/test_robot_description.py`
 
 **Interfaces:**
-- Consumes: Task 1 answers (all yes); `layout.PIECES`, `layout.graspable`.
-- Produces: ROS topics `/world/table_world/dynamic_pose` (`tf2_msgs/msg/TFMessage`), `/simple_arm/suction/<piece>/attach` and `/detach` (`std_msgs/msg/Empty`), service `/world/table_world/set_pose` (`ros_gz_interfaces/srv/SetEntityPose`).
+- Consumes: Task 1 answers (suction and `set_pose` work; the combined pose stream loses names, so each piece publishes its own pose — approved by the user); `layout.PIECES`, `layout.graspable`.
+- Produces: ROS topics `/lab/pieces/<piece>/pose` (`geometry_msgs/msg/PoseStamped`, world frame), `/simple_arm/suction/<piece>/attach` and `/detach` (`std_msgs/msg/Empty`), service `/world/table_world/set_pose` (`ros_gz_interfaces/srv/SetEntityPose`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1499,13 +1499,20 @@ def test_suction_topics_are_bridged():
             assert (topic, topic, 'std_msgs/msg/Empty', 'gz.msgs.Empty') in ros_to_gz
 
 
-def test_scene_poses_and_reset_service_are_bridged():
-    poses = next(e for e in BRIDGE
-                 if e.get('ros_topic_name') == '/world/table_world/dynamic_pose')
-    assert poses['gz_topic_name'] == '/world/table_world/dynamic_pose/info'
-    assert (poses['ros_type_name'], poses['gz_type_name']) == (
-        'tf2_msgs/msg/TFMessage', 'gz.msgs.Pose_V')
-    assert poses['direction'] == 'GZ_TO_ROS'
+@pytest.mark.parametrize('name', sorted(layout.PIECES))
+def test_piece_pose_is_published_and_bridged(name):
+    plugin = next(p for p in WORLD_MODELS[name].findall('plugin')
+                  if p.get('name') == 'gz::sim::systems::PosePublisher')
+    assert plugin.find('publish_model_pose').text == 'true'
+    assert plugin.find('use_pose_vector_msg').text == 'false'
+    entry = next(e for e in BRIDGE if e.get('ros_topic_name') == f'/lab/pieces/{name}/pose')
+    assert entry['gz_topic_name'] == f'/model/{name}/pose'
+    assert (entry['ros_type_name'], entry['gz_type_name']) == (
+        'geometry_msgs/msg/PoseStamped', 'gz.msgs.Pose')
+    assert entry['direction'] == 'GZ_TO_ROS'
+
+
+def test_reset_service_is_bridged():
     service = next(e for e in BRIDGE if e.get('service_name') == '/world/table_world/set_pose')
     assert service['ros_type_name'] == 'ros_gz_interfaces/srv/SetEntityPose'
     assert (service['gz_req_type_name'], service['gz_rep_type_name']) == (
@@ -1549,7 +1556,22 @@ In `src/lab_simulation/worlds/table_world.sdf`, change the three piece poses:
 
 Each is 0.20 m from the base axis. In the "OBJECTS ON THE TABLE" comment, add: `Default positions are 0.20 m from the base axis, inside the arm's reach.`
 
-- [ ] **Step 4: Add the suction plugins to the arm include**
+- [ ] **Step 4: Publish each piece's pose**
+
+Gazebo's combined pose stream loses entity names when bridged (Task 1), so each piece publishes its own pose. In each of the three piece models (`red_cube`, `blue_cylinder`, `green_sphere`), add directly before its closing `</model>`:
+
+```xml
+      <!-- Publishes this piece's world pose on /model/<name>/pose. -->
+      <plugin filename="gz-sim-pose-publisher-system"
+              name="gz::sim::systems::PosePublisher">
+        <publish_model_pose>true</publish_model_pose>
+        <publish_link_pose>false</publish_link_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>50</update_frequency>
+      </plugin>
+```
+
+- [ ] **Step 4b: Add the suction plugins to the arm include**
 
 Replace the arm `<include>` element with:
 
@@ -1602,11 +1624,24 @@ Append to `src/lab_simulation/config/bridge.yaml`:
 
 ```yaml
 
-# Live poses of every dynamic entity; lab_simulation uses the piece models.
-- ros_topic_name: /world/table_world/dynamic_pose
-  gz_topic_name: /world/table_world/dynamic_pose/info
-  ros_type_name: tf2_msgs/msg/TFMessage
-  gz_type_name: gz.msgs.Pose_V
+# Live world pose of each piece, from its PosePublisher (one topic per piece:
+# the combined pose stream loses entity names when bridged).
+- ros_topic_name: /lab/pieces/red_cube/pose
+  gz_topic_name: /model/red_cube/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /lab/pieces/blue_cylinder/pose
+  gz_topic_name: /model/blue_cylinder/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /lab/pieces/green_sphere/pose
+  gz_topic_name: /model/green_sphere/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
   direction: GZ_TO_ROS
 
 # Suction: engage or release one piece (see table_world.sdf).
@@ -1666,17 +1701,17 @@ Expected: all pass.
 ```bash
 docker exec -d ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros2 launch lab_simulation arm_world.launch.py rviz:=false > /tmp/launch.log 2>&1'
 sleep 20
-docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros2 topic list | grep -E "dynamic_pose|suction" && ros2 service list | grep set_pose'
+docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros2 topic list | grep -E "lab/pieces|suction" && ros2 service list | grep set_pose && timeout 15 ros2 topic echo --once /lab/pieces/red_cube/pose geometry_msgs/msg/PoseStamped | grep -A3 position'
 ```
 
-Expected: `/world/table_world/dynamic_pose`, six `/simple_arm/suction/...` topics and `/world/table_world/set_pose`. Stop the simulation with `./stop-lab.sh && ./start-lab.sh` (simplest clean stop).
+Expected: three `/lab/pieces/<piece>/pose` topics, six `/simple_arm/suction/...` topics, `/world/table_world/set_pose`, and a red-cube position near (0.173, 0.10, 0.775). Stop the simulation with `./stop-lab.sh && ./start-lab.sh` (simplest clean stop).
 
 - [ ] **Step 8: Full suite and commit**
 
 ```bash
 lab_test
 git add src/lab_simulation/worlds/table_world.sdf src/lab_simulation/config/bridge.yaml src/lab_simulation/test/test_robot_description.py
-git commit -m "feat(sim): add suction joints, piece poses and scene reset to the world and bridge
+git commit -m "feat(sim): add suction joints, per-piece poses and scene reset to the world and bridge
 
 Pieces move inside the arm's reach. The robot-description tests now
 tolerate service entries in the bridge configuration."
@@ -1691,8 +1726,8 @@ tolerate service entries in the bridge configuration."
 - Modify: `src/lab_simulation/package.xml`
 
 **Interfaces:**
-- Consumes: `tasks.MoveResult`, `tasks.SimulationUnresponsive`, `kinematics.Joints`, `layout`; ROS interfaces from Task 7.
-- Produces: `ros_util.sim_now(node) -> float`, `ros_util.spin_until(node, predicate, sim_timeout_s, wall_timeout_s=60.0) -> bool` (raises `SimulationUnresponsive`), `ros_util.spin_for(node, sim_seconds)`; `arm.Arm(node)` implementing the *arm* interface of Task 6 plus `wall_seconds_since_feedback()`; `scene.Scene(node)` implementing the *scene* interface of Task 6 plus `has_poses()`, `detach_all()`, `reset(positions, timeout_s=3.0) -> bool`.
+- Consumes: `tasks.MoveResult`, `tasks.SimulationUnresponsive`, `kinematics.Joints`, `layout`; ROS interfaces from Task 7 (`/lab/pieces/<piece>/pose`, suction topics, `set_pose`).
+- Produces: `scene.POSE_TOPIC = '/lab/pieces/{name}/pose'`; `ros_util.sim_now(node) -> float`, `ros_util.spin_until(node, predicate, sim_timeout_s, wall_timeout_s=60.0) -> bool` (raises `SimulationUnresponsive`), `ros_util.spin_for(node, sim_seconds)`; `arm.Arm(node)` implementing the *arm* interface of Task 6 plus `wall_seconds_since_feedback()`; `scene.Scene(node)` implementing the *scene* interface of Task 6 plus `has_poses()`, `detach_all()`, `reset(positions, timeout_s=3.0) -> bool`.
 
 These modules are thin adapters over ROS and are verified against the live simulation (Step 4) and end to end by the benchmark smoke run in Task 10.
 
@@ -1703,7 +1738,6 @@ In `src/lab_simulation/package.xml`, add (keeping the `exec_depend` list alphabe
 ```xml
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>ros_gz_interfaces</exec_depend>
-  <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
 ```
 
@@ -1860,21 +1894,23 @@ class Arm:
 ```python
 """Piece poses, scene reset and suction, through the Gazebo bridge."""
 
+from functools import partial
 import math
 from typing import Dict, Optional, Sequence, Tuple
 
 from geometry_msgs.msg import Pose
+from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import SetEntityPose
 from std_msgs.msg import Empty
-from tf2_msgs.msg import TFMessage
 
 from . import layout
 from .ros_util import spin_for, spin_until
 
-POSE_TOPIC = '/world/table_world/dynamic_pose'
+# One pose topic per piece, bridged from each piece's PosePublisher.
+POSE_TOPIC = '/lab/pieces/{name}/pose'
 SET_POSE_SERVICE = '/world/table_world/set_pose'
 SETTLE_SPEED = 0.001    # m/s: below this a piece counts as at rest
 SETTLE_SAMPLE_S = 0.1
@@ -1888,19 +1924,18 @@ class Scene:
     def __init__(self, node: Node):
         self._node = node
         self._poses: Dict[str, XYZ] = {}
-        node.create_subscription(TFMessage, POSE_TOPIC, self._on_poses, qos_profile_sensor_data)
+        for name in layout.PIECES:
+            node.create_subscription(PoseStamped, POSE_TOPIC.format(name=name),
+                                     partial(self._on_pose, name), qos_profile_sensor_data)
         self._set_pose = node.create_client(SetEntityPose, SET_POSE_SERVICE)
         self._attach = {n: node.create_publisher(Empty, f'/simple_arm/suction/{n}/attach', 10)
                         for n in layout.PIECES}
         self._detach = {n: node.create_publisher(Empty, f'/simple_arm/suction/{n}/detach', 10)
                         for n in layout.PIECES}
 
-    def _on_poses(self, msg: TFMessage) -> None:
-        for transform in msg.transforms:
-            name = transform.child_frame_id.split('::')[-1]
-            if name in layout.PIECES:
-                t = transform.transform.translation
-                self._poses[name] = (t.x, t.y, t.z)
+    def _on_pose(self, name: str, msg: PoseStamped) -> None:
+        p = msg.pose.position
+        self._poses[name] = (p.x, p.y, p.z)
 
     def has_poses(self) -> bool:
         """Return True once every piece's pose has been received."""
@@ -2037,8 +2072,8 @@ git commit -m "feat(sim): add ROS adapters for arm motion, piece poses, reset an
 - Modify: `src/lab_simulation/CMakeLists.txt`, `src/lab_simulation/config/arm.rviz`, `src/lab_simulation/launch/arm_world.launch.py`
 
 **Interfaces:**
-- Consumes: `/world/table_world/dynamic_pose`; `layout.PIECES`; Task 1's `ATTACHED_AT_START`.
-- Produces: `visualization_msgs/msg/MarkerArray` on `/lab/pieces`; executable `object_markers.py`.
+- Consumes: `scene.POSE_TOPIC` per-piece poses; `layout.PIECES`; Task 1's `ATTACHED_AT_START=yes` (suction attaches at start-up, so the launch file releases it).
+- Produces: `visualization_msgs/msg/MarkerArray` on `/lab/piece_markers`; executable `object_markers.py`.
 
 - [ ] **Step 1: Implement the node and entry point**
 
@@ -2047,17 +2082,20 @@ git commit -m "feat(sim): add ROS adapters for arm motion, piece poses, reset an
 ```python
 """Publish RViz markers for the table and the pieces at their live poses."""
 
+from functools import partial
 from typing import Dict
 
+from geometry_msgs.msg import Pose
+from geometry_msgs.msg import PoseStamped
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from tf2_msgs.msg import TFMessage
 from visualization_msgs.msg import Marker, MarkerArray
 
 from . import layout
+from .scene import POSE_TOPIC
 
-TOPIC = '/lab/pieces'
+TOPIC = '/lab/piece_markers'
 
 # (marker type, scale x, y, z, colour r, g, b) mirroring table_world.sdf.
 SHAPES = {
@@ -2072,17 +2110,15 @@ class ObjectMarkers(Node):
 
     def __init__(self):
         super().__init__('object_markers')
-        self._transforms: Dict[str, object] = {}
+        self._poses: Dict[str, Pose] = {}
         self._publisher = self.create_publisher(MarkerArray, TOPIC, 10)
-        self.create_subscription(TFMessage, '/world/table_world/dynamic_pose',
-                                 self._on_poses, qos_profile_sensor_data)
+        for name in layout.PIECES:
+            self.create_subscription(PoseStamped, POSE_TOPIC.format(name=name),
+                                     partial(self._on_pose, name), qos_profile_sensor_data)
         self.create_timer(0.1, self._publish)
 
-    def _on_poses(self, msg: TFMessage) -> None:
-        for transform in msg.transforms:
-            name = transform.child_frame_id.split('::')[-1]
-            if name in layout.PIECES:
-                self._transforms[name] = transform.transform
+    def _on_pose(self, name: str, msg: PoseStamped) -> None:
+        self._poses[name] = msg.pose
 
     def _marker(self, marker_id, kind, scale, colour):
         marker = Marker()
@@ -2105,15 +2141,11 @@ class ObjectMarkers(Node):
         table.color.a = 0.6
         markers.markers.append(table)
         for marker_id, name in enumerate(sorted(SHAPES), start=1):
-            if name not in self._transforms:
+            if name not in self._poses:
                 continue
             kind, sx, sy, sz, r, g, b = SHAPES[name]
             marker = self._marker(marker_id, kind, (sx, sy, sz), (r, g, b))
-            t = self._transforms[name]
-            marker.pose.position.x = t.translation.x
-            marker.pose.position.y = t.translation.y
-            marker.pose.position.z = t.translation.z
-            marker.pose.orientation = t.rotation
+            marker.pose = self._poses[name]
             markers.markers.append(marker)
         self._publisher.publish(markers)
 
@@ -2160,7 +2192,7 @@ In `src/lab_simulation/config/arm.rviz`, insert directly above the line `  Enabl
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /lab/pieces
+        Value: /lab/piece_markers
       Value: true
 ```
 
@@ -2178,7 +2210,7 @@ In `src/lab_simulation/launch/arm_world.launch.py`:
         output='screen')
 ```
 
-- If Task 1 recorded `ATTACHED_AT_START=yes`, also add (use the `-p` value that worked in Task 1):
+- Task 1 recorded `ATTACHED_AT_START=yes` and that `-p ''` works, so also add:
 
 ```python
     # DetachableJoint attaches at start-up; release every piece once Gazebo runs.
@@ -2190,7 +2222,7 @@ In `src/lab_simulation/launch/arm_world.launch.py`:
         for name in sorted(PIECES)])
 ```
 
-and add `release_suction` to the returned list. If `ATTACHED_AT_START=no`, do not add the `TimerAction`/`ExecuteProcess` imports or the `PIECES` import.
+and add `release_suction` to the returned list.
 - Add `object_markers` to the returned `LaunchDescription` list, after `rviz`.
 - In the module docstring's list, add `5. Piece markers for RViz (object_markers)`.
 
@@ -2924,7 +2956,7 @@ improvements.
 ````
 
 4. **Using the lab:** add a subsection `### Watching a pick`: RViz shows the table and pieces at their live positions; to watch picks, run `./enter-lab.sh`, then `ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 rviz:=true`, and open `http://localhost:6080`.
-5. **Topics table:** add rows for `/world/table_world/dynamic_pose`, `/simple_arm/suction/<piece>/{attach,detach}`, `/lab/pieces`, and the `set_pose` service.
+5. **Topics table:** add rows for `/lab/pieces/<piece>/pose`, `/simple_arm/suction/<piece>/{attach,detach}`, `/lab/piece_markers`, and the `set_pose` service.
 6. **Status table:** add `Suction pick-and-place visible in RViz | Working` and `Seeded benchmark with committed baseline | Working (see benchmarks/baseline/)`; update the test count to the number `lab_test` reports.
 7. **Project structure:** add `run-benchmark.sh`, `benchmarks/`, `lab_simulation/` (Python package), the new scripts, launch file and tests.
 8. **Robot model table:** shoulder and elbow range `±3π/4 (±135°)`.
