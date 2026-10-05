@@ -2,9 +2,6 @@ services:
   lab:
     build: .
     image: ai-robotics-lab:latest
-    # The osrf/ros desktop base image is published for amd64 only. Docker
-    # Desktop emulates it on Apple Silicon.
-    platform: linux/amd64
     container_name: ai-robotics-lab
     # Reap child processes (Gazebo, RViz) that exit while the container runs.
     init: true

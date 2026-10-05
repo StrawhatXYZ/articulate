@@ -1,15 +1,15 @@
 # AI & Robotics Lab: ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2, with an
 # in-container virtual desktop (Xvfb + Openbox + x11vnc + noVNC).
 #
-# The base image is pinned by digest so builds are reproducible. It is
-# published for linux/amd64 only; on Apple Silicon it runs under emulation
-# (docker-compose.yml sets the platform explicitly).
-# To update: docker pull --platform linux/amd64 osrf/ros:jazzy-desktop, then
-#   docker inspect --format '{{index .RepoDigests 0}}' osrf/ros:jazzy-desktop
-FROM osrf/ros:jazzy-desktop@sha256:2f520187e84304fffb60d19c9a7d8e2e79d563a6e579a090427e5994eb1b8c45
+# The base image is pinned by its multi-architecture index digest, so builds
+# are reproducible and run natively on both arm64 (Apple Silicon) and amd64.
+# To update: docker buildx imagetools inspect ros:jazzy, then copy the
+# "Digest" of the index (MediaType ...image.index...).
+FROM ros:jazzy@sha256:066420e07f60aa18262f2479981def87ebcfcec42eefb0c0c57c4a46098348ca
 
 # ── MoveIt 2, ros2_control, Gazebo bridge, and virtual desktop tooling ─────
 RUN apt-get update && apt-get install -y \
+    ros-jazzy-desktop \
     ros-jazzy-moveit \
     ros-jazzy-moveit-resources \
     ros-jazzy-ros2-control \
