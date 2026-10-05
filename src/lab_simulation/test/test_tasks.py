@@ -177,11 +177,18 @@ def test_pick_descends_to_the_standoff_above_the_piece():
     assert grasp_tip_z == pytest.approx(contact_z + layout.GRASP_STANDOFF, abs=1e-6)
 
 
-def test_held_piece_hanging_slightly_off_its_grip_is_not_dropped():
-    world = FakeWorld(sag=0.015)
+def test_held_piece_within_a_few_millimetres_of_its_grip_is_not_dropped():
+    """Measured hold: within 0.6 cm of the rigid-grip position."""
+    world = FakeWorld(sag=0.005)
     result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
     assert result.failure != 'dropped'
-    assert result.details['carry_deviation_m'] == pytest.approx(0.015, abs=1e-6)
+    assert result.details['carry_deviation_m'] == pytest.approx(0.005, abs=1e-6)
+
+
+def test_piece_separating_from_its_grip_is_dropped():
+    world = FakeWorld(sag=0.02)
+    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
+    assert result.failure == 'dropped'
 
 
 def test_held_piece_rotating_with_the_arm_is_not_dropped():

@@ -18,9 +18,9 @@ REACH_TOLERANCE_M = 0.01
 PLACE_TOLERANCE_M = 0.02
 # A placed piece must rest upright on the table: not on the floor, not on its side.
 PLACE_HEIGHT_TOLERANCE_M = 0.01
-# A held piece hangs ~1 cm off its grip (suction joint compliance); a dropped
-# piece separates from the tip. Placement accuracy is judged separately.
-CARRY_TOLERANCE_M = 0.03
+# A held piece stays within ~0.6 cm of its rigid-grip position (measured);
+# further than this it has slipped or separated from the tip.
+CARRY_TOLERANCE_M = 0.01
 DISTURB_THRESHOLD_M = 0.01
 PLACE_CLEARANCE_M = 0.003
 MOVE_TIMEOUT_S = 5.0
