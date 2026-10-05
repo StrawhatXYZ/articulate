@@ -22,6 +22,8 @@
     link_3        box       0.15 tall        joint_3 at link_2 top, pitch (Y)
     end_effector  sphere    r=0.025          fixed at the tip of link_3
 
+  Shoulder and elbow range is ±135°: with ±90° the table is unreachable.
+
   Inertia tensors are those of the solid primitive about its centre of mass.
 -->
 <sdf version="1.8">
@@ -103,8 +105,8 @@
       <axis>
         <xyz>0 1 0</xyz>
         <limit>
-          <lower>-1.5708</lower>
-          <upper>1.5708</upper>
+          <lower>-2.356</lower>
+          <upper>2.356</upper>
           <effort>15</effort>
           <velocity>2.0</velocity>
         </limit>
@@ -143,8 +145,8 @@
       <axis>
         <xyz>0 1 0</xyz>
         <limit>
-          <lower>-1.5708</lower>
-          <upper>1.5708</upper>
+          <lower>-2.356</lower>
+          <upper>2.356</upper>
           <effort>10</effort>
           <velocity>2.0</velocity>
         </limit>

@@ -31,8 +31,8 @@ JOINT_NAMES = ('joint_1', 'joint_2', 'joint_3')
 # test/test_robot_description.py checks this.
 JOINT_LIMITS = {
     'joint_1': (-3.14159, 3.14159),
-    'joint_2': (-1.5708, 1.5708),
-    'joint_3': (-1.5708, 1.5708),
+    'joint_2': (-2.356, 2.356),
+    'joint_3': (-2.356, 2.356),
 }
 
 # Each entry is (joint_1, joint_2, joint_3) in radians plus a hold time in

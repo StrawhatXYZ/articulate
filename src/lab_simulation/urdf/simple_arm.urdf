@@ -19,6 +19,8 @@
     joint_3              revolute about Y, elbow pitch
     end_effector_joint   fixed, tool point at the tip of link_3
 
+  Shoulder and elbow range is ±135°: with ±90° the table is unreachable.
+
   Inertia tensors are those of the solid primitive about its centre of mass.
 -->
 <robot name="simple_arm">
@@ -88,7 +90,7 @@
     <child link="link_2"/>
     <origin xyz="0 0 0.25" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="15" velocity="2.0"/>
+    <limit lower="-2.356" upper="2.356" effort="15" velocity="2.0"/>
     <dynamics damping="0.1" friction="0.1"/>
   </joint>
 
@@ -115,7 +117,7 @@
     <child link="link_3"/>
     <origin xyz="0 0 0.20" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="10" velocity="2.0"/>
+    <limit lower="-2.356" upper="2.356" effort="10" velocity="2.0"/>
     <dynamics damping="0.1" friction="0.1"/>
   </joint>
 
