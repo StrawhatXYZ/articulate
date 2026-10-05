@@ -20,6 +20,10 @@ MIN_RADIUS = 0.12       # clear of the arm base (radius 0.08)
 MAX_RADIUS = 0.35       # beyond the arm's reach
 MIN_TRAVEL = 0.05       # a place target must differ from the start
 GRASP_GAP_MAX = 0.005   # suction engages only within this gap
+# The grasp approach stops this far above the piece instead of pressing on
+# it: a sagging arm that presses on the top slides off it. Must stay below
+# GRASP_GAP_MAX so the suction can still engage.
+GRASP_STANDOFF = 0.003
 
 XY = Tuple[float, float]
 
@@ -46,8 +50,7 @@ PIECES: Dict[str, Piece] = {
     piece.name: piece for piece in (
         Piece('red_cube', 0.025, 0.025),
         Piece('blue_cylinder', 0.05, 0.03),
-        # A sphere's top is a point: require the tip to be nearly centred.
-        Piece('green_sphere', 0.04, 0.01),
+        Piece('green_block', 0.02, 0.02),
     )
 }
 

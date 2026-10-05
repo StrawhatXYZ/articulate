@@ -15,6 +15,7 @@ ament_python_install_package(${PROJECT_NAME})
 # Scripts are installed as executables so they can be run with
 #   ros2 run lab_simulation <script>
 install(PROGRAMS
+  scripts/benchmark.py
   scripts/move_arm.py
   scripts/object_markers.py
   DESTINATION lib/${PROJECT_NAME}

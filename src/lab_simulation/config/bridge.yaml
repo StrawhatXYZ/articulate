@@ -50,8 +50,8 @@
   gz_type_name: gz.msgs.Pose
   direction: GZ_TO_ROS
 
-- ros_topic_name: /lab/pieces/green_sphere/pose
-  gz_topic_name: /model/green_sphere/pose
+- ros_topic_name: /lab/pieces/green_block/pose
+  gz_topic_name: /model/green_block/pose
   ros_type_name: geometry_msgs/msg/PoseStamped
   gz_type_name: gz.msgs.Pose
   direction: GZ_TO_ROS
@@ -81,17 +81,36 @@
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-- ros_topic_name: /simple_arm/suction/green_sphere/attach
-  gz_topic_name: /simple_arm/suction/green_sphere/attach
+- ros_topic_name: /simple_arm/suction/green_block/attach
+  gz_topic_name: /simple_arm/suction/green_block/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-- ros_topic_name: /simple_arm/suction/green_sphere/detach
-  gz_topic_name: /simple_arm/suction/green_sphere/detach
+- ros_topic_name: /simple_arm/suction/green_block/detach
+  gz_topic_name: /simple_arm/suction/green_block/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
+
+# Suction state: "attached" or "detached", published when it changes.
+- ros_topic_name: /simple_arm/suction/red_cube/state
+  gz_topic_name: /simple_arm/suction/red_cube/state
+  ros_type_name: std_msgs/msg/String
+  gz_type_name: gz.msgs.StringMsg
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /simple_arm/suction/blue_cylinder/state
+  gz_topic_name: /simple_arm/suction/blue_cylinder/state
+  ros_type_name: std_msgs/msg/String
+  gz_type_name: gz.msgs.StringMsg
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /simple_arm/suction/green_block/state
+  gz_topic_name: /simple_arm/suction/green_block/state
+  ros_type_name: std_msgs/msg/String
+  gz_type_name: gz.msgs.StringMsg
+  direction: GZ_TO_ROS
 
 # Scene reset: teleport a model (benchmark only).
 - service_name: /world/table_world/set_pose

@@ -139,8 +139,11 @@ retreat home, wait for the piece to settle.
 - **Proximity check:** the gap between the tip sphere's surface and the
   piece's top surface (from live Gazebo poses) must be ≤ 5 mm, or the trial
   fails with `grasp_miss` and `attach` is never sent.
-- **Carry check:** during the carry, the piece must stay within 1 cm of its
-  attached offset from the tip; otherwise `dropped`.
+- **Carry check:** during the carry, the piece must stay within 3 cm of its
+  attached offset from the tip; otherwise `dropped`. (Amended from 1 cm with
+  the user's approval: a held piece hangs ~1.1 cm off its grip because the
+  suction joint is slightly compliant, so 1 cm labelled every held piece as
+  dropped. Success still requires placement within 2 cm.)
 - **Success:** grasp passed, no drop, and final piece position within 2 cm
   (in the table plane) of the target.
 - **Recorded:** cycle time; placement error; whether other pieces moved more

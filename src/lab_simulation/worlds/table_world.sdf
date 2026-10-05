@@ -5,7 +5,7 @@
   A simple Gazebo world with:
     - A ground plane
     - A table (1 m x 1 m, top surface at z = 0.75 m)
-    - Three coloured objects on the table for the arm to interact with
+    - Three coloured, flat-topped objects on the table for the arm to pick
     - The 3-DOF arm, included from simple_arm.sdf and welded to the table top
     - A directional light source
 
@@ -171,28 +171,28 @@
       </plugin>
     </model>
 
-    <!-- Green sphere -->
-    <model name="green_sphere">
-      <link name="sphere_link">
+    <!-- Green block: flat-topped so it can be grasped by suction and cannot roll -->
+    <model name="green_block">
+      <link name="block_link">
         <inertial>
           <mass>0.1</mass>
           <inertia>
-            <ixx>0.000064</ixx><ixy>0</ixy><ixz>0</ixz>
-            <iyy>0.000064</iyy><iyz>0</iyz><izz>0.000064</izz>
+            <ixx>0.00002667</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>0.00004333</iyy><iyz>0</iyz><izz>0.00004333</izz>
           </inertia>
         </inertial>
-        <collision name="sphere_collision">
+        <collision name="block_collision">
           <geometry>
-            <sphere>
-              <radius>0.04</radius>
-            </sphere>
+            <box>
+              <size>0.06 0.04 0.04</size>
+            </box>
           </geometry>
         </collision>
-        <visual name="sphere_visual">
+        <visual name="block_visual">
           <geometry>
-            <sphere>
-              <radius>0.04</radius>
-            </sphere>
+            <box>
+              <size>0.06 0.04 0.04</size>
+            </box>
           </geometry>
           <material>
             <ambient>0.1 0.7 0.2 1.0</ambient>
@@ -200,7 +200,7 @@
           </material>
         </visual>
       </link>
-      <pose>0.0 -0.20 0.79 0 0 0</pose>
+      <pose>0.0 -0.20 0.77 0 0 0</pose>
       <!-- Publishes this piece's world pose on /model/<name>/pose. -->
       <plugin filename="gz-sim-pose-publisher-system"
               name="gz::sim::systems::PosePublisher">
@@ -232,7 +232,8 @@
         the end effector at its current offset. Declared here rather than in
         simple_arm.sdf so the arm model does not name this world's pieces.
         lab_simulation.scene engages suction only when the tip is within 5 mm
-        of the piece (layout.GRASP_GAP_MAX).
+        of the piece (layout.GRASP_GAP_MAX), and waits for the "attached" or
+        "detached" confirmation each plugin publishes on its output_topic.
       -->
       <plugin filename="gz-sim-detachable-joint-system"
               name="gz::sim::systems::DetachableJoint">
@@ -241,6 +242,7 @@
         <child_link>cube_link</child_link>
         <attach_topic>/simple_arm/suction/red_cube/attach</attach_topic>
         <detach_topic>/simple_arm/suction/red_cube/detach</detach_topic>
+        <output_topic>/simple_arm/suction/red_cube/state</output_topic>
         <suppress_child_warning>true</suppress_child_warning>
       </plugin>
       <plugin filename="gz-sim-detachable-joint-system"
@@ -250,15 +252,17 @@
         <child_link>cylinder_link</child_link>
         <attach_topic>/simple_arm/suction/blue_cylinder/attach</attach_topic>
         <detach_topic>/simple_arm/suction/blue_cylinder/detach</detach_topic>
+        <output_topic>/simple_arm/suction/blue_cylinder/state</output_topic>
         <suppress_child_warning>true</suppress_child_warning>
       </plugin>
       <plugin filename="gz-sim-detachable-joint-system"
               name="gz::sim::systems::DetachableJoint">
         <parent_link>end_effector</parent_link>
-        <child_model>green_sphere</child_model>
-        <child_link>sphere_link</child_link>
-        <attach_topic>/simple_arm/suction/green_sphere/attach</attach_topic>
-        <detach_topic>/simple_arm/suction/green_sphere/detach</detach_topic>
+        <child_model>green_block</child_model>
+        <child_link>block_link</child_link>
+        <attach_topic>/simple_arm/suction/green_block/attach</attach_topic>
+        <detach_topic>/simple_arm/suction/green_block/detach</detach_topic>
+        <output_topic>/simple_arm/suction/green_block/state</output_topic>
         <suppress_child_warning>true</suppress_child_warning>
       </plugin>
     </include>

@@ -21,6 +21,8 @@ services:
     volumes:
       # Live-edit the ROS 2 package from the host.
       - ./src:/workspace/src
+      # Benchmark results, readable on the host.
+      - ./results:/workspace/results
     shm_size: "2g"
     stdin_open: true
     tty: true

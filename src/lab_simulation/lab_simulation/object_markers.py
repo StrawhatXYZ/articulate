@@ -19,7 +19,7 @@ TOPIC = '/lab/piece_markers'
 SHAPES = {
     'red_cube': (Marker.CUBE, 0.05, 0.05, 0.05, 0.8, 0.1, 0.1),
     'blue_cylinder': (Marker.CYLINDER, 0.06, 0.06, 0.10, 0.1, 0.1, 0.8),
-    'green_sphere': (Marker.SPHERE, 0.08, 0.08, 0.08, 0.1, 0.7, 0.2),
+    'green_block': (Marker.CUBE, 0.06, 0.04, 0.04, 0.1, 0.7, 0.2),
 }
 
 

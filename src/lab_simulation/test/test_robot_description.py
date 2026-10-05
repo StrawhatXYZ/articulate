@@ -261,3 +261,16 @@ def test_piece_geometry_matches_layout(name):
     x, y, z = sdf_xyz(model)
     assert z == pytest.approx(piece.centre_z)
     assert layout.graspable(piece, (x, y)), f'{name} default position is out of reach'
+
+
+@pytest.mark.parametrize('name', sorted(layout.PIECES))
+def test_suction_state_is_published_and_bridged(name):
+    plugin = next(p for p in arm_include().findall('plugin')
+                  if p.get('name') == DETACHABLE and p.find('child_model').text == name)
+    topic = f'/simple_arm/suction/{name}/state'
+    assert plugin.find('output_topic').text == topic
+    entry = next(e for e in BRIDGE if e.get('ros_topic_name') == topic)
+    assert entry['gz_topic_name'] == topic
+    assert (entry['ros_type_name'], entry['gz_type_name']) == (
+        'std_msgs/msg/String', 'gz.msgs.StringMsg')
+    assert entry['direction'] == 'GZ_TO_ROS'

@@ -33,7 +33,7 @@ def test_place_target_constraints(seed):
     positions = layout.sample_layout(rng)
     target = layout.sample_place_target(rng, 'red_cube', positions)
     assert math.dist(target, positions['red_cube']) >= layout.MIN_TRAVEL
-    for name in ('blue_cylinder', 'green_sphere'):
+    for name in ('blue_cylinder', 'green_block'):
         assert math.dist(target, positions[name]) >= layout.MIN_SEPARATION
     assert is_reachable((*target, layout.PIECES['red_cube'].grasp_z), layout.MARGIN)
 
@@ -58,3 +58,14 @@ def test_grasp_gap():
     assert layout.grasp_gap(cube, centre, (0.2, 0.0, cube.grasp_z + 0.004)) == pytest.approx(
         0.004)
     assert layout.grasp_gap(cube, centre, (0.25, 0.0, cube.grasp_z)) == math.inf
+
+
+def test_grasp_standoff_is_inside_the_suction_range():
+    assert 0 < layout.GRASP_STANDOFF < layout.GRASP_GAP_MAX
+
+
+def test_no_piece_can_roll():
+    """Suction needs a flat top: every piece is a box or an upright cylinder."""
+    assert set(layout.PIECES) == {'red_cube', 'blue_cylinder', 'green_block'}
+    assert layout.PIECES['green_block'].half_height == pytest.approx(0.02)
+    assert layout.PIECES['green_block'].footprint == pytest.approx(0.02)

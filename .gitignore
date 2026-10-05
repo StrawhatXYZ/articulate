@@ -3,6 +3,9 @@ build/
 install/
 log/
 
+# Benchmark runs (milestone baselines are copied into benchmarks/)
+results/
+
 # Python
 __pycache__/
 *.pyc

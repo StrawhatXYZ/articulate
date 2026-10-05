@@ -16,7 +16,9 @@ from .kinematics import forward, inverse, Unreachable
 
 REACH_TOLERANCE_M = 0.01
 PLACE_TOLERANCE_M = 0.02
-CARRY_TOLERANCE_M = 0.01
+# A held piece hangs ~1 cm off its grip (suction joint compliance); a dropped
+# piece separates from the tip. Placement accuracy is judged separately.
+CARRY_TOLERANCE_M = 0.03
 DISTURB_THRESHOLD_M = 0.01
 PLACE_CLEARANCE_M = 0.003
 MOVE_TIMEOUT_S = 5.0
@@ -149,7 +151,7 @@ class PickPlaceTask:
 
     def _execute(self, piece, start: XYZ, target, details: dict) -> Optional[str]:
         x, y, z = start
-        grasp_z = z + piece.half_height + layout.TIP_RADIUS
+        grasp_z = z + piece.half_height + layout.TIP_RADIUS + layout.GRASP_STANDOFF
         for xyz in ((x, y, grasp_z + layout.HOVER), (x, y, grasp_z)):
             failure = self._move(xyz)
             if failure:
@@ -161,9 +163,12 @@ class PickPlaceTask:
             return 'grasp_miss'
         offset = _sub(self._scene.pose(piece.name), tip)
 
+        details['carry_deviation_m'] = 0.0
+
         def carrying() -> bool:
-            expected = _add(self._tip(), offset)
-            return math.dist(self._scene.pose(piece.name), expected) <= CARRY_TOLERANCE_M
+            deviation = math.dist(self._scene.pose(piece.name), _add(self._tip(), offset))
+            details['carry_deviation_m'] = max(details['carry_deviation_m'], deviation)
+            return deviation <= CARRY_TOLERANCE_M
 
         # Aim the tip so that the piece, not the tip, lands on the target.
         tx, ty = target[0] - offset[0], target[1] - offset[1]
