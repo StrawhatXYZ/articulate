@@ -103,7 +103,8 @@ def compare_dirs(a: Path, b: Path) -> str:
     """Return the Markdown comparison of two run directories."""
     summary_a = json.loads((a / 'summary.json').read_text())
     summary_b = json.loads((b / 'summary.json').read_text())
-    return metrics.render_comparison(metrics.compare(summary_a, summary_b), a.name, b.name)
+    return metrics.render_comparison(metrics.compare(summary_a, summary_b), a.name, b.name,
+                                     metrics.comparability_warnings(summary_a, summary_b))
 
 
 def set_real_time_factor(value: float) -> bool:

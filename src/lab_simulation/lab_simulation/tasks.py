@@ -12,16 +12,19 @@ import random
 from typing import Callable, Dict, NamedTuple, Optional, Sequence, Tuple
 
 from . import layout
-from .kinematics import forward, inverse, Unreachable
+from .kinematics import end_effector_rotation, forward, inverse, rotate, Unreachable, unrotate
 
 REACH_TOLERANCE_M = 0.01
 PLACE_TOLERANCE_M = 0.02
+# A placed piece must rest upright on the table: not on the floor, not on its side.
+PLACE_HEIGHT_TOLERANCE_M = 0.01
 # A held piece hangs ~1 cm off its grip (suction joint compliance); a dropped
 # piece separates from the tip. Placement accuracy is judged separately.
 CARRY_TOLERANCE_M = 0.03
 DISTURB_THRESHOLD_M = 0.01
 PLACE_CLEARANCE_M = 0.003
 MOVE_TIMEOUT_S = 5.0
+PLACE_SOLVE_ITERATIONS = 20
 HOME = (0.0, 0.0, 0.0)
 
 XYZ = Tuple[float, float, float]
@@ -127,10 +130,12 @@ class PickPlaceTask:
         final = self._scene.pose(name)
         details['final'] = list(final)
         error = math.dist(final[:2], target)
+        details['final_height_error_m'] = final[2] - layout.PIECES[name].centre_z
+        upright_on_table = abs(details['final_height_error_m']) <= PLACE_HEIGHT_TOLERANCE_M
         disturbed = any(
             math.dist(self._scene.pose(other), start[other]) > DISTURB_THRESHOLD_M
             for other in names if other != name)
-        ok = error <= PLACE_TOLERANCE_M
+        ok = error <= PLACE_TOLERANCE_M and upright_on_table
         return TrialResult(self.name, index, ok, None if ok else 'placement_error',
                            elapsed, error, disturbed, details)
 
@@ -161,28 +166,56 @@ class PickPlaceTask:
         if not self._scene.attach(piece.name, tip):
             details['grasp_gap_m'] = self._scene.grasp_gap(piece.name, tip)
             return 'grasp_miss'
-        offset = _sub(self._scene.pose(piece.name), tip)
-
+        # Suction fixes the piece in the end-effector frame, so it rotates with
+        # the arm: keep the grip in that frame, not as a world-frame offset.
+        held_offset = _sub(self._scene.pose(piece.name), tip)
+        grip = unrotate(end_effector_rotation(self._arm.joint_positions()), held_offset)
         details['carry_deviation_m'] = 0.0
 
         def carrying() -> bool:
-            deviation = math.dist(self._scene.pose(piece.name), _add(self._tip(), offset))
+            q = self._arm.joint_positions()
+            expected = _add(forward(q), rotate(end_effector_rotation(q), grip))
+            deviation = math.dist(self._scene.pose(piece.name), expected)
             details['carry_deviation_m'] = max(details['carry_deviation_m'], deviation)
             return deviation <= CARRY_TOLERANCE_M
 
         # Aim the tip so that the piece, not the tip, lands on the target.
-        tx, ty = target[0] - offset[0], target[1] - offset[1]
-        place_z = piece.centre_z - offset[2] + PLACE_CLEARANCE_M
-        for xyz in ((tip[0], tip[1], tip[2] + layout.LIFT),
-                    (tx, ty, place_z + layout.LIFT),
-                    (tx, ty, place_z)):
+        place_piece = (target[0], target[1], piece.centre_z + PLACE_CLEARANCE_M)
+        try:
+            place_tip = self._tip_for_piece(place_piece, grip, held_offset)
+            above_tip = self._tip_for_piece(
+                (place_piece[0], place_piece[1], place_piece[2] + layout.LIFT), grip,
+                held_offset)
+        except Unreachable:
+            return 'unreachable'
+        for xyz in ((tip[0], tip[1], tip[2] + layout.LIFT), above_tip, place_tip):
             failure = self._move(xyz, carrying)
             if failure:
                 return failure
 
         self._scene.detach(piece.name)
-        failure = self._move((tx, ty, place_z + layout.HOVER))
+        failure = self._move((place_tip[0], place_tip[1], place_tip[2] + layout.HOVER))
         if failure:
             return failure
         home = self._arm.move_to(HOME, MOVE_TIMEOUT_S)
         return None if home.reached else 'timeout'
+
+    @staticmethod
+    def _tip_for_piece(piece_xyz: Sequence[float], grip: Sequence[float],
+                       initial_offset: Sequence[float]) -> XYZ:
+        """
+        Return the tip position that puts a piece held with grip at piece_xyz.
+
+        The grip rotates with the arm pose, and the pose depends on the tip
+        position, so solve by fixed-point iteration, starting from the
+        world-frame offset the piece had when it was grasped. Raises
+        Unreachable.
+        """
+        tip = _sub(piece_xyz, initial_offset)
+        for _ in range(PLACE_SOLVE_ITERATIONS):
+            rotated = rotate(end_effector_rotation(inverse(tip)), grip)
+            new_tip = _sub(piece_xyz, rotated)
+            if math.dist(new_tip, tip) < 1e-6:
+                return new_tip
+            tip = new_tip
+        return tip

@@ -76,7 +76,7 @@ def test_write_outputs_and_compare(tmp_path):
     benchmark.write_outputs(b, faster, {'real_time_factor': 4.0, 'trials_per_minute': 20.0})
     assert (a / 'report.md').read_text().startswith('# Benchmark report')
     table = benchmark.compare_dirs(a, b)
-    assert '| reach cycle time mean (s) | 2.000 | 1.000 |' in table
+    assert '| reach cycle time mean, successes (s) | 2.000 | 1.000 |' in table
     assert '4.00×' in table
 
 

@@ -4,7 +4,7 @@ import math
 import random
 
 from lab_simulation import layout
-from lab_simulation.kinematics import forward
+from lab_simulation.kinematics import end_effector_rotation, forward, rotate, unrotate
 from lab_simulation.tasks import MoveResult, PickPlaceTask, ReachTask
 import pytest
 
@@ -17,7 +17,7 @@ class FakeWorld:
     """
 
     def __init__(self, positions=None, joint_bias=0.0, drop=False, stuck=False,
-                 knock_off=False, sag=0.0):
+                 knock_off=False, sag=0.0, topple_drop=0.0):
         positions = positions or {'red_cube': (0.2, 0.0), 'blue_cylinder': (-0.2, 0.0),
                                   'green_block': (0.0, -0.2)}
         self.poses = {n: (x, y, layout.PIECES[n].centre_z) for n, (x, y) in positions.items()}
@@ -30,7 +30,9 @@ class FakeWorld:
         self.stuck = stuck
         self.knock_off = knock_off
         self.sag = sag  # a held piece hangs this far below its grip (joint compliance)
+        self.topple_drop = topple_drop  # the placed piece rests this much lower (toppled)
         self.commanded_tips = []
+        self.attached_last = None
 
     # arm.Arm interface
     def joint_positions(self):
@@ -44,7 +46,9 @@ class FakeWorld:
         self.q = (q[0] + self.joint_bias, q[1], q[2])
         if self.attached and not self.drop:
             tip = forward(self.q)
-            held = tuple(t + o for t, o in zip(tip, self.offset))
+            # Suction fixes the piece in the end-effector frame: it rotates with the arm.
+            held = tuple(t + o for t, o in
+                         zip(tip, rotate(end_effector_rotation(self.q), self.offset)))
             self.poses[self.attached] = (held[0], held[1], held[2] - self.sag)
         if monitor is not None and not monitor():
             return MoveResult(False, True, 0.5, 0.0)
@@ -61,17 +65,23 @@ class FakeWorld:
         if self.grasp_gap(name, tip) > layout.GRASP_GAP_MAX:
             return False
         self.attached = name
-        self.offset = tuple(p - t for p, t in zip(self.poses[name], tip))
+        world_offset = tuple(p - t for p, t in zip(self.poses[name], tip))
+        self.offset = unrotate(end_effector_rotation(self.q), world_offset)
         return True
 
     def detach(self, name):
         if self.attached == name:
+            self.attached_last = name
             self.attached = None
 
     def wait_settled(self, timeout_s=3.0):
         for name, (x, y, _) in self.poses.items():
-            self.poses[name] = (x, y, -1.0) if self.knock_off else \
-                (x, y, layout.PIECES[name].centre_z)
+            if self.knock_off:
+                self.poses[name] = (x, y, -1.0)
+            elif name == self.attached_last:
+                self.poses[name] = (x, y, layout.PIECES[name].centre_z - self.topple_drop)
+            else:
+                self.poses[name] = (x, y, layout.PIECES[name].centre_z)
         return True
 
 
@@ -137,9 +147,16 @@ def test_pick_place_unreachable_piece():
 def test_pick_place_piece_knocked_off_table_is_placement_error():
     world = FakeWorld(knock_off=True)
     result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
-    assert result.failure == 'placement_error' or result.success
+    assert result.failure == 'placement_error'
     assert result.details['final'][2] == -1.0
     assert result.disturbed is True
+
+
+def test_toppled_piece_on_target_is_placement_error():
+    """A toppled piece rests lower than upright (a lying cylinder: 2 cm): not placed."""
+    world = FakeWorld(topple_drop=0.02)
+    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
+    assert result.failure == 'placement_error'
 
 
 def test_result_serialises():
@@ -165,3 +182,12 @@ def test_held_piece_hanging_slightly_off_its_grip_is_not_dropped():
     result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
     assert result.failure != 'dropped'
     assert result.details['carry_deviation_m'] == pytest.approx(0.015, abs=1e-6)
+
+
+def test_held_piece_rotating_with_the_arm_is_not_dropped():
+    """The carry changes the forearm pitch; a rigidly held piece swings with it."""
+    for seed in range(10):
+        world = FakeWorld()
+        result = PickPlaceTask(world, world, now_of(world)).run(random.Random(seed), 0)
+        assert result.failure != 'dropped', (seed, result.details)
+        assert result.details['carry_deviation_m'] < 1e-6, (seed, result.details)

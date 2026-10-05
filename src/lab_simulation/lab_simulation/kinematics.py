@@ -9,6 +9,8 @@ them against the file.
 import math
 from typing import NamedTuple, Sequence, Tuple
 
+Matrix = Tuple[Tuple[float, float, float], ...]
+
 BASE_Z = 0.75            # world_joint: base_link on the table top
 SHOULDER_HEIGHT = 0.29   # joint_1 (0.04) + link_1 (0.25), above base_link
 UPPER_ARM = 0.20         # joint_2 -> joint_3
@@ -93,3 +95,29 @@ def is_reachable(xyz: Sequence[float], margin: float = 0.0) -> bool:
         except Unreachable:
             return False
     return True
+
+
+def end_effector_rotation(q: Sequence[float]) -> Matrix:
+    """
+    Return the world orientation of the end-effector frame for joint angles q.
+
+    The frame yaws with joint_1 and pitches with joint_2 + joint_3:
+    Rz(q1) * Ry(q2 + q3). Its z axis points along the forearm. A piece held
+    by suction is fixed in this frame, so it rotates with the arm.
+    """
+    q1, q2, q3 = q
+    c1, s1 = math.cos(q1), math.sin(q1)
+    cp, sp = math.cos(q2 + q3), math.sin(q2 + q3)
+    return ((c1 * cp, -s1, c1 * sp),
+            (s1 * cp, c1, s1 * sp),
+            (-sp, 0.0, cp))
+
+
+def rotate(matrix: Matrix, vector: Sequence[float]) -> Tuple[float, float, float]:
+    """Return matrix * vector."""
+    return tuple(sum(row[k] * vector[k] for k in range(3)) for row in matrix)
+
+
+def unrotate(matrix: Matrix, vector: Sequence[float]) -> Tuple[float, float, float]:
+    """Return transpose(matrix) * vector (the inverse of rotate for a rotation)."""
+    return tuple(sum(matrix[k][i] * vector[k] for k in range(3)) for i in range(3))

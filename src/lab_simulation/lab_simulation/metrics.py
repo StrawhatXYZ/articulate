@@ -34,7 +34,7 @@ def percentile(values: Sequence[float], p: float) -> Optional[float]:
 
 
 def _stats(values: Sequence[float], keys: Iterable[str]) -> Dict[str, Optional[float]]:
-    out: Dict[str, Optional[float]] = {}
+    out: Dict[str, Optional[float]] = {'n': len(values)}
     for key in keys:
         if not values:
             out[key] = None
@@ -64,7 +64,7 @@ def summarize_task(trials: List[dict]) -> dict:
         'success_rate': successes / n if n else None,
         'success_ci': [lo, hi],
         'cycle_time_s': _stats(cycle, ('mean', 'median', 'p95')),
-        'error_m': _stats(errors, ('mean', 'p95')),
+        'error_m': _stats(errors, ('mean', 'median', 'p95')),
         'failures': dict(sorted(failures.items())),
         'disturbed': sum(1 for t in trials if t['disturbed']),
     }
@@ -90,8 +90,28 @@ def _row(metric, a, b, higher_is_better, significant=None):
             'better': better, 'significant': significant}
 
 
+def comparability_warnings(a: dict, b: dict) -> List[str]:
+    """Return reasons why summaries a and b are not a like-for-like comparison."""
+    warnings = []
+    for key, label in (('seed', 'seed'), ('trials_per_task', 'trials per task')):
+        if a['run'].get(key) != b['run'].get(key):
+            warnings.append(f"different {label}: {a['run'].get(key)} vs {b['run'].get(key)}")
+    if set(a['tasks']) != set(b['tasks']):
+        warnings.append(f"different task set: {sorted(a['tasks'])} vs {sorted(b['tasks'])};"
+                        ' throughput is not compared')
+    for label, summary in (('A', a), ('B', b)):
+        if summary['run'].get('complete') is False:
+            warnings.append(f'run {label} is incomplete')
+    return warnings
+
+
 def compare(a: dict, b: dict) -> List[dict]:
-    """Return metric rows comparing summary a (before) with summary b (after)."""
+    """
+    Return metric rows comparing summary a (before) with summary b (after).
+
+    Only success rates are tested for significance (Wilson intervals). Other
+    rows carry no significance test and are reported as "not tested".
+    """
     rows = []
     for task in sorted(set(a['tasks']) & set(b['tasks'])):
         ta, tb = a['tasks'][task], b['tasks'][task]
@@ -99,13 +119,16 @@ def compare(a: dict, b: dict) -> List[dict]:
             tb['success_ci'][0] <= ta['success_ci'][1]
         rows.append(_row(f'{task} success rate', ta['success_rate'], tb['success_rate'],
                          True, significant=not overlap))
-        rows.append(_row(f'{task} cycle time mean (s)', ta['cycle_time_s']['mean'],
+        rows.append(_row(f'{task} cycle time mean, successes (s)', ta['cycle_time_s']['mean'],
                          tb['cycle_time_s']['mean'], False))
-        rows.append(_row(f'{task} error mean (m)', ta['error_m']['mean'],
+        rows.append(_row(f'{task} error median, measured trials (m)',
+                         ta['error_m'].get('median'), tb['error_m'].get('median'), False))
+        rows.append(_row(f'{task} error mean, measured trials (m)', ta['error_m']['mean'],
                          tb['error_m']['mean'], False))
-    for key, label in (('real_time_factor', 'real-time factor'),
-                       ('trials_per_minute', 'trials per minute')):
-        rows.append(_row(label, a['run'].get(key), b['run'].get(key), True))
+    if set(a['tasks']) == set(b['tasks']):
+        for key, label in (('real_time_factor', 'real-time factor'),
+                           ('trials_per_minute', 'trials per minute')):
+            rows.append(_row(label, a['run'].get(key), b['run'].get(key), True))
     return rows
 
 
@@ -128,9 +151,13 @@ def render_report(summary: dict) -> str:
         f"- Real-time factor: {_fmt(run.get('real_time_factor'), 2)},"
         f" trials per minute: {_fmt(run.get('trials_per_minute'), 1)}",
         '',
-        '| Task | Success | 95% CI | Cycle mean (s) | Cycle p95 (s) | Error | Error mean |'
-        ' Error p95 | Failures | Disturbed |',
-        '|---|---|---|---|---|---|---|---|---|---|',
+        'Cycle times cover successful trials only; errors cover trials where the final'
+        ' error was measured (n given for each).',
+        '',
+        '| Task | Success | 95% CI | Cycle mean (s) | Cycle p95 (s) | Cycle n (successes) |'
+        ' Error | Error mean | Error median | Error p95 | Error n (measured) | Failures |'
+        ' Disturbed |',
+        '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
     ]
     for task, s in summary['tasks'].items():
         failures = ', '.join(f'{k}: {v}' for k, v in s['failures'].items()) or 'none'
@@ -139,17 +166,25 @@ def render_report(summary: dict) -> str:
             f"| {task} | {s['successes']}/{s['trials']} ({rate}) |"
             f" {100 * s['success_ci'][0]:.0f}–{100 * s['success_ci'][1]:.0f}% |"
             f" {_fmt(s['cycle_time_s']['mean'], 2)} | {_fmt(s['cycle_time_s']['p95'], 2)} |"
+            f" {s['cycle_time_s'].get('n', 'n/a')} |"
             f" {ERROR_LABELS.get(task, 'Error (m)')} | {_fmt(s['error_m']['mean'], 4)} |"
-            f" {_fmt(s['error_m']['p95'], 4)} | {failures} | {s['disturbed']} |")
+            f" {_fmt(s['error_m'].get('median'), 4)} | {_fmt(s['error_m']['p95'], 4)} |"
+            f" {s['error_m'].get('n', 'n/a')} | {failures} | {s['disturbed']} |")
     return '\n'.join(lines) + '\n'
 
 
-def render_comparison(rows: List[dict], label_a: str, label_b: str) -> str:
-    """Return a Markdown table comparing two runs."""
-    lines = [f'| Metric | {label_a} | {label_b} | Change | Ratio | Verdict |',
-             '|---|---|---|---|---|---|']
+def render_comparison(rows: List[dict], label_a: str, label_b: str,
+                      warnings: Sequence[str] = ()) -> str:
+    """Return a Markdown table comparing two runs, preceded by any warnings."""
+    lines = [f'> Warning: {warning}' for warning in warnings]
+    if warnings:
+        lines.append('')
+    lines += [f'| Metric | {label_a} | {label_b} | Change | Ratio | Verdict |',
+              '|---|---|---|---|---|---|']
     for row in rows:
-        if row['significant'] is False:
+        if row['significant'] is None:
+            verdict = 'not tested'
+        elif row['significant'] is False:
             verdict = 'not significant'
         elif row['better'] is None:
             verdict = 'no change'
