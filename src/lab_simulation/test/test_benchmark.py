@@ -87,3 +87,10 @@ def test_main_compare(tmp_path, capsys):
         benchmark.write_outputs(tmp_path / name, trials, {})
     assert benchmark.main(['compare', str(tmp_path / 'a'), str(tmp_path / 'b')]) == 0
     assert '| Metric | a | b |' in capsys.readouterr().out
+
+
+def test_run_is_uncapped_by_default_and_realtime_on_request():
+    parser = benchmark.build_parser()
+    assert parser.parse_args(['run']).realtime is False
+    assert parser.parse_args(['run', '--realtime']).realtime is True
+    assert parser.parse_args(['run', '--realtime', 'false']).realtime is False

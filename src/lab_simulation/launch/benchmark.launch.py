@@ -4,6 +4,8 @@ Run the benchmark against a headless simulation, then shut everything down.
 Usage:
   ros2 launch lab_simulation benchmark.launch.py
   ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=10 seed:=7
+  ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 \
+      rviz:=true realtime:=true
 """
 
 import os
@@ -34,6 +36,8 @@ def generate_launch_description():
                               description='Directory for run folders'),
         DeclareLaunchArgument('rviz', default_value='false',
                               description='Show RViz while benchmarking'),
+        DeclareLaunchArgument('realtime', default_value='false',
+                              description='Run at real time instead of uncapped (for watching)'),
     ]
 
     simulation = IncludeLaunchDescription(
@@ -48,7 +52,8 @@ def generate_launch_description():
                    '--task', LaunchConfiguration('task'),
                    '--trials', LaunchConfiguration('trials'),
                    '--seed', LaunchConfiguration('seed'),
-                   '--out', LaunchConfiguration('out')],
+                   '--out', LaunchConfiguration('out'),
+                   '--realtime', LaunchConfiguration('realtime')],
         parameters=[{'use_sim_time': True}],
         output='screen')
 

@@ -146,7 +146,8 @@ def run(args) -> int:
         rclpy.try_shutdown()
         return EXIT_NO_SIMULATION
 
-    rtf_set = set_real_time_factor(UNTHROTTLED_RTF)
+    # Uncapped by default for throughput; real time when someone is watching.
+    rtf_set = False if args.realtime else set_real_time_factor(UNTHROTTLED_RTF)
     now = (lambda: sim_now(node))
     all_tasks = {'reach': ReachTask(arm, now), 'pick_place': PickPlaceTask(arm, scene, now)}
     tasks = list(all_tasks.values()) if args.task == 'all' else [all_tasks[args.task]]
@@ -180,8 +181,8 @@ def run(args) -> int:
     return EXIT_OK if complete else EXIT_UNRESPONSIVE
 
 
-def main(argv=None) -> int:
-    """Parse arguments and run a subcommand."""
+def build_parser() -> argparse.ArgumentParser:
+    """Return the command-line parser."""
     parser = argparse.ArgumentParser(prog='benchmark', description=__doc__.splitlines()[1])
     sub = parser.add_subparsers(dest='command', required=True)
     run_parser = sub.add_parser('run', help='run trials against the live simulation')
@@ -189,11 +190,20 @@ def main(argv=None) -> int:
     run_parser.add_argument('--trials', type=int, default=100)
     run_parser.add_argument('--seed', type=int, default=42)
     run_parser.add_argument('--out', default='results')
+    run_parser.add_argument(
+        '--realtime', nargs='?', const=True, default=False,
+        type=lambda value: value.lower() == 'true',
+        help='keep the simulation at real time (for watching) instead of uncapped')
     compare_parser = sub.add_parser('compare', help='compare two run directories')
     compare_parser.add_argument('a', type=Path)
     compare_parser.add_argument('b', type=Path)
+    return parser
+
+
+def main(argv=None) -> int:
+    """Parse arguments and run a subcommand."""
     # Launch appends ROS arguments; ignore them.
-    args, _ = parser.parse_known_args(argv)
+    args, _ = build_parser().parse_known_args(argv)
     if args.command == 'compare':
         print(compare_dirs(args.a, args.b), end='')
         return EXIT_OK
