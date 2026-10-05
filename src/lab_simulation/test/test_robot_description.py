@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+from lab_simulation import layout
 import pytest
 import yaml
 
@@ -20,6 +21,8 @@ URDF = ET.parse(PKG / 'urdf' / 'simple_arm.urdf').getroot()
 SDF_MODEL = ET.parse(PKG / 'worlds' / 'simple_arm.sdf').getroot().find('model')
 WORLD = ET.parse(PKG / 'worlds' / 'table_world.sdf').getroot().find('world')
 BRIDGE = yaml.safe_load((PKG / 'config' / 'bridge.yaml').read_text())
+WORLD_MODELS = {m.get('name'): m for m in WORLD.findall('model')}
+DETACHABLE = 'gz::sim::systems::DetachableJoint'
 
 ACTUATED = ('joint_1', 'joint_2', 'joint_3')
 
@@ -149,7 +152,7 @@ def test_arm_placement_matches_world():
 
 def test_controller_topics_are_bridged():
     ros_to_gz = {(e['ros_topic_name'], e['gz_topic_name']) for e in BRIDGE
-                 if e['direction'] == 'ROS_TO_GZ'}
+                 if e.get('direction') == 'ROS_TO_GZ'}
     controllers = [p for p in SDF_MODEL.findall('plugin')
                    if p.get('name') == 'gz::sim::systems::JointPositionController']
     assert sorted(p.find('joint_name').text for p in controllers) == list(ACTUATED)
@@ -170,7 +173,7 @@ def test_controller_effort_clamped_to_limit():
 
 
 def test_joint_states_bridged_from_world():
-    entry = next(e for e in BRIDGE if e['ros_topic_name'] == '/joint_states')
+    entry = next(e for e in BRIDGE if e.get('ros_topic_name') == '/joint_states')
     world = WORLD.get('name')
     assert entry['gz_topic_name'] == f'/world/{world}/model/simple_arm/joint_state'
 
@@ -195,3 +198,66 @@ def test_clamp():
     assert clamp(2.0, -1.0, 1.0) == 1.0
     assert clamp(-2.0, -1.0, 1.0) == -1.0
     assert clamp(0.5, -1.0, 1.0) == 0.5
+
+
+def arm_include():
+    return next(i for i in WORLD.findall('include') if i.find('name').text == 'simple_arm')
+
+
+def test_suction_joints_reference_real_entities():
+    plugins = [p for p in arm_include().findall('plugin') if p.get('name') == DETACHABLE]
+    assert sorted(p.find('child_model').text for p in plugins) == sorted(layout.PIECES)
+    arm_links = {link.get('name') for link in SDF_MODEL.findall('link')}
+    for plugin in plugins:
+        name = plugin.find('child_model').text
+        assert plugin.find('parent_link').text in arm_links
+        piece_links = {link.get('name') for link in WORLD_MODELS[name].findall('link')}
+        assert plugin.find('child_link').text in piece_links
+        assert plugin.find('attach_topic').text == f'/simple_arm/suction/{name}/attach'
+        assert plugin.find('detach_topic').text == f'/simple_arm/suction/{name}/detach'
+
+
+def test_suction_topics_are_bridged():
+    ros_to_gz = {(e['ros_topic_name'], e['gz_topic_name'], e['ros_type_name'], e['gz_type_name'])
+                 for e in BRIDGE if e.get('direction') == 'ROS_TO_GZ'}
+    for name in layout.PIECES:
+        for action in ('attach', 'detach'):
+            topic = f'/simple_arm/suction/{name}/{action}'
+            assert (topic, topic, 'std_msgs/msg/Empty', 'gz.msgs.Empty') in ros_to_gz
+
+
+@pytest.mark.parametrize('name', sorted(layout.PIECES))
+def test_piece_pose_is_published_and_bridged(name):
+    plugin = next(p for p in WORLD_MODELS[name].findall('plugin')
+                  if p.get('name') == 'gz::sim::systems::PosePublisher')
+    assert plugin.find('publish_model_pose').text == 'true'
+    assert plugin.find('use_pose_vector_msg').text == 'false'
+    entry = next(e for e in BRIDGE if e.get('ros_topic_name') == f'/lab/pieces/{name}/pose')
+    assert entry['gz_topic_name'] == f'/model/{name}/pose'
+    assert (entry['ros_type_name'], entry['gz_type_name']) == (
+        'geometry_msgs/msg/PoseStamped', 'gz.msgs.Pose')
+    assert entry['direction'] == 'GZ_TO_ROS'
+
+
+def test_reset_service_is_bridged():
+    service = next(e for e in BRIDGE if e.get('service_name') == '/world/table_world/set_pose')
+    assert service['ros_type_name'] == 'ros_gz_interfaces/srv/SetEntityPose'
+    assert (service['gz_req_type_name'], service['gz_rep_type_name']) == (
+        'gz.msgs.Pose', 'gz.msgs.Boolean')
+
+
+@pytest.mark.parametrize('name', sorted(layout.PIECES))
+def test_piece_geometry_matches_layout(name):
+    piece = layout.PIECES[name]
+    model = WORLD_MODELS[name]
+    geometry = model.find('link/collision/geometry')[0]
+    if geometry.tag == 'box':
+        half = floats(geometry.find('size').text)[2] / 2
+    elif geometry.tag == 'cylinder':
+        half = float(geometry.find('length').text) / 2
+    else:
+        half = float(geometry.find('radius').text)
+    assert piece.half_height == pytest.approx(half)
+    x, y, z = sdf_xyz(model)
+    assert z == pytest.approx(piece.centre_z)
+    assert layout.graspable(piece, (x, y)), f'{name} default position is out of reach'

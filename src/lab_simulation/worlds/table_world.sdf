@@ -86,6 +86,7 @@
          OBJECTS ON THE TABLE
          Three simple objects the arm can try to pick up.
          Each is 100 g, with the inertia of its solid primitive.
+         Default positions are 0.20 m from the base axis, inside the arm's reach.
          ══════════════════════════════════════════════════════════════ -->
 
     <!-- Red cube -->
@@ -117,7 +118,15 @@
           </material>
         </visual>
       </link>
-      <pose>0.25 0.15 0.775 0 0 0</pose>
+      <pose>0.173 0.10 0.775 0 0 0</pose>
+      <!-- Publishes this piece's world pose on /model/<name>/pose. -->
+      <plugin filename="gz-sim-pose-publisher-system"
+              name="gz::sim::systems::PosePublisher">
+        <publish_model_pose>true</publish_model_pose>
+        <publish_link_pose>false</publish_link_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>50</update_frequency>
+      </plugin>
     </model>
 
     <!-- Blue cylinder -->
@@ -151,7 +160,15 @@
           </material>
         </visual>
       </link>
-      <pose>-0.20 0.20 0.80 0 0 0</pose>
+      <pose>-0.173 0.10 0.80 0 0 0</pose>
+      <!-- Publishes this piece's world pose on /model/<name>/pose. -->
+      <plugin filename="gz-sim-pose-publisher-system"
+              name="gz::sim::systems::PosePublisher">
+        <publish_model_pose>true</publish_model_pose>
+        <publish_link_pose>false</publish_link_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>50</update_frequency>
+      </plugin>
     </model>
 
     <!-- Green sphere -->
@@ -183,7 +200,15 @@
           </material>
         </visual>
       </link>
-      <pose>0.10 -0.25 0.79 0 0 0</pose>
+      <pose>0.0 -0.20 0.79 0 0 0</pose>
+      <!-- Publishes this piece's world pose on /model/<name>/pose. -->
+      <plugin filename="gz-sim-pose-publisher-system"
+              name="gz::sim::systems::PosePublisher">
+        <publish_model_pose>true</publish_model_pose>
+        <publish_link_pose>false</publish_link_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>50</update_frequency>
+      </plugin>
     </model>
 
     <!-- ══════════════════════════════════════════════════════════════
@@ -201,6 +226,41 @@
       <uri>model://simple_arm.sdf</uri>
       <name>simple_arm</name>
       <pose>0 0 0.75 0 0 0</pose>
+
+      <!--
+        Simulated suction: one DetachableJoint per piece, fixing the piece to
+        the end effector at its current offset. Declared here rather than in
+        simple_arm.sdf so the arm model does not name this world's pieces.
+        lab_simulation.scene engages suction only when the tip is within 5 mm
+        of the piece (layout.GRASP_GAP_MAX).
+      -->
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>end_effector</parent_link>
+        <child_model>red_cube</child_model>
+        <child_link>cube_link</child_link>
+        <attach_topic>/simple_arm/suction/red_cube/attach</attach_topic>
+        <detach_topic>/simple_arm/suction/red_cube/detach</detach_topic>
+        <suppress_child_warning>true</suppress_child_warning>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>end_effector</parent_link>
+        <child_model>blue_cylinder</child_model>
+        <child_link>cylinder_link</child_link>
+        <attach_topic>/simple_arm/suction/blue_cylinder/attach</attach_topic>
+        <detach_topic>/simple_arm/suction/blue_cylinder/detach</detach_topic>
+        <suppress_child_warning>true</suppress_child_warning>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>end_effector</parent_link>
+        <child_model>green_sphere</child_model>
+        <child_link>sphere_link</child_link>
+        <attach_topic>/simple_arm/suction/green_sphere/attach</attach_topic>
+        <detach_topic>/simple_arm/suction/green_sphere/detach</detach_topic>
+        <suppress_child_warning>true</suppress_child_warning>
+      </plugin>
     </include>
 
     <!-- ══════════════════════════════════════════════════════════════

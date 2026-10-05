@@ -35,3 +35,66 @@
   ros_type_name: std_msgs/msg/Float64
   gz_type_name: gz.msgs.Double
   direction: ROS_TO_GZ
+
+# Live world pose of each piece, from its PosePublisher (one topic per piece:
+# the combined pose stream loses entity names when bridged).
+- ros_topic_name: /lab/pieces/red_cube/pose
+  gz_topic_name: /model/red_cube/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /lab/pieces/blue_cylinder/pose
+  gz_topic_name: /model/blue_cylinder/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /lab/pieces/green_sphere/pose
+  gz_topic_name: /model/green_sphere/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
+  direction: GZ_TO_ROS
+
+# Suction: engage or release one piece (see table_world.sdf).
+- ros_topic_name: /simple_arm/suction/red_cube/attach
+  gz_topic_name: /simple_arm/suction/red_cube/attach
+  ros_type_name: std_msgs/msg/Empty
+  gz_type_name: gz.msgs.Empty
+  direction: ROS_TO_GZ
+
+- ros_topic_name: /simple_arm/suction/red_cube/detach
+  gz_topic_name: /simple_arm/suction/red_cube/detach
+  ros_type_name: std_msgs/msg/Empty
+  gz_type_name: gz.msgs.Empty
+  direction: ROS_TO_GZ
+
+- ros_topic_name: /simple_arm/suction/blue_cylinder/attach
+  gz_topic_name: /simple_arm/suction/blue_cylinder/attach
+  ros_type_name: std_msgs/msg/Empty
+  gz_type_name: gz.msgs.Empty
+  direction: ROS_TO_GZ
+
+- ros_topic_name: /simple_arm/suction/blue_cylinder/detach
+  gz_topic_name: /simple_arm/suction/blue_cylinder/detach
+  ros_type_name: std_msgs/msg/Empty
+  gz_type_name: gz.msgs.Empty
+  direction: ROS_TO_GZ
+
+- ros_topic_name: /simple_arm/suction/green_sphere/attach
+  gz_topic_name: /simple_arm/suction/green_sphere/attach
+  ros_type_name: std_msgs/msg/Empty
+  gz_type_name: gz.msgs.Empty
+  direction: ROS_TO_GZ
+
+- ros_topic_name: /simple_arm/suction/green_sphere/detach
+  gz_topic_name: /simple_arm/suction/green_sphere/detach
+  ros_type_name: std_msgs/msg/Empty
+  gz_type_name: gz.msgs.Empty
+  direction: ROS_TO_GZ
+
+# Scene reset: teleport a model (benchmark only).
+- service_name: /world/table_world/set_pose
+  ros_type_name: ros_gz_interfaces/srv/SetEntityPose
+  gz_req_type_name: gz.msgs.Pose
+  gz_rep_type_name: gz.msgs.Boolean
