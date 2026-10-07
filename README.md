@@ -235,6 +235,10 @@ was a real jaw closure, but Gazebo's friction alone holds only 64% of pieces
 to the end of the carry, and only 5 of 31 cylinders. How well the real
 gripper holds is something only hardware can measure.
 
+Step 2's pieces, layout and reach targets are sized to the SO-101 (reach
+targets lie 3–8 cm above the table, step 1's 5–65 cm), so the reach rows
+compare each robot on its own workspace.
+
 The step 1 baseline (3-DOF arm, native and emulated images) stays in
 [`benchmarks/baseline/`](benchmarks/baseline/); step 1 itself can be checked
 out as tag `v0.2.0`.

@@ -2,7 +2,10 @@
 
 Seed 42, 100 trials per task, commit `6526dbd`, native arm64 (Apple Silicon).
 Generated with `benchmark.py compare`; the warnings are expected, since the
-robot and grasp differ by design.
+robot and grasp differ by design. So do the tasks' geometry: step 2's pieces
+are sized for the SO-101's jaws, its layout follows the SO-101's workspace,
+and its reach targets lie 3–8 cm above the table (step 1: 5–65 cm). Read the
+reach rows as each robot on its own workspace, not like for like.
 
 - `step1-native`: [`../baseline/native`](../baseline/native), the 3-DOF arm
   with suction (step 1).
