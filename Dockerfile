@@ -32,9 +32,16 @@ RUN apt-get update && apt-get install -y \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Initialise the rosdep database (the base image ships the sources list), and
-# put `gz` on PATH (the Gazebo vendor package installs it outside PATH).
-RUN rosdep update --rosdistro jazzy \
+# ros2_control inside Gazebo and the pick_ik solver for the SO-101 (step 2).
+# Installed here rather than in the layer above, which holds multi-GB of
+# packages that would otherwise be downloaded again.
+# Then initialise the rosdep database (the base image ships the sources list),
+# and put `gz` on PATH (the Gazebo vendor package installs it outside PATH).
+RUN apt-get update && apt-get install -y \
+    ros-jazzy-gz-ros2-control \
+    ros-jazzy-pick-ik \
+    && rm -rf /var/lib/apt/lists/* \
+    && rosdep update --rosdistro jazzy \
     && ln -sf /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz /usr/local/bin/gz
 
 COPY --chmod=755 scripts/start-desktop.sh /usr/local/bin/start-desktop.sh
