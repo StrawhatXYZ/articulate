@@ -114,6 +114,24 @@ def test_compare_warns_when_runs_are_not_comparable():
     assert 'Warning' in metrics.render_comparison(metrics.compare(a, b), 'A', 'B', warnings)
 
 
+def test_compare_warns_across_robots_and_grasp_modes():
+    step1 = summary_with(84, seed=42)                 # predates the robot keys
+    step2 = summary_with(90, seed=42)
+    step2['run'].update(robot='so101', grasp_mode='latched')
+    warnings = metrics.comparability_warnings(step1, step2)
+    assert 'different robot: simple_arm vs so101' in warnings
+    assert 'different grasp mode: suction vs latched' in warnings
+    friction = summary_with(70, seed=42)
+    friction['run'].update(robot='so101', grasp_mode='friction')
+    assert metrics.comparability_warnings(step2, friction) == [
+        'different grasp mode: latched vs friction']
+
+
+def test_report_states_robot_and_grasp_mode():
+    summary = metrics.summarize([trial()], {'robot': 'so101', 'grasp_mode': 'latched'})
+    assert '- Robot: so101, grasp mode: latched' in metrics.render_report(summary)
+
+
 def test_throughput_is_not_compared_across_different_task_sets():
     a = metrics.summarize([trial()], {'tasks': ['reach'], 'trials_per_minute': 10.0})
     b = metrics.summarize([trial(), trial(task='pick_place')],

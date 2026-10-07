@@ -1,0 +1,23 @@
+# OMPL planning pipeline for the SO-101. MoveIt's defaults, plus a planner
+# configuration for the arm group (without one, MoveIt warns on every
+# request). Planner types and their parameters come from
+# moveit_configs_utils' ompl_defaults.yaml.
+planning_plugins:
+  - ompl_interface/OMPLPlanner
+# Processed in this order.
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+arm:
+  default_planner_config: RRTConnect
+  planner_configs:
+    - RRTConnect
+    - RRTstar
+    - PRM

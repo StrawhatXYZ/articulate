@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<!--
+  The lab robot: the SO-101 on the table top, with what the simulation adds.
+
+    - ros2_control through gz_ros2_control (position interfaces; the gripper
+      keeps commanding "closed" so it squeezes at the servo's torque limit)
+    - jaw friction
+    - the grasp latch: one DetachableJoint per piece, engaged by the
+      benchmark only after the jaws have closed on that piece (spec 4.4)
+
+  Arguments:
+    controllers  ros2_control parameter file for the Gazebo plugin (set by
+                 arm_world.launch.py; not needed outside Gazebo)
+-->
+<robot name="so101" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="controllers" default=""/>
+  <xacro:include filename="$(find so101_description)/urdf/so101_macro.xacro"/>
+
+  <!-- The world frame is the table centre at floor level; the arm stands on
+       the 0.75 m table top, facing +x. -->
+  <link name="world"/>
+  <xacro:so101 parent="world">
+    <origin xyz="0 0 0.75" rpy="0 0 0"/>
+  </xacro:so101>
+
+  <!-- Start in the SRDF "home" pose with the jaws open. -->
+  <xacro:macro name="position_joint" params="name initial">
+    <joint name="${name}">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">${initial}</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+
+  <ros2_control name="so101" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <xacro:position_joint name="shoulder_pan" initial="0.0"/>
+    <xacro:position_joint name="shoulder_lift" initial="-1.3"/>
+    <xacro:position_joint name="elbow_flex" initial="0.6"/>
+    <xacro:position_joint name="wrist_flex" initial="1.6"/>
+    <xacro:position_joint name="wrist_roll" initial="0.0"/>
+    <xacro:position_joint name="gripper" initial="0.6"/>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg controllers)</parameters>
+    </plugin>
+  </gazebo>
+
+  <!-- Rubber-like jaw pads (the pieces' own friction is set in the world). -->
+  <gazebo reference="gripper_link">
+    <mu1>1.5</mu1>
+    <mu2>1.5</mu2>
+  </gazebo>
+  <gazebo reference="moving_jaw_so101_v1_link">
+    <mu1>1.5</mu1>
+    <mu2>1.5</mu2>
+  </gazebo>
+
+  <!-- Grasp latch. DetachableJoint attaches at start-up, so the launch file
+       releases every piece; the benchmark attaches one only after a real
+       jaw closure on it. Must list every piece in layout.PIECES. -->
+  <xacro:macro name="grasp_latch" params="piece link">
+    <gazebo>
+      <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
+        <parent_link>gripper_link</parent_link>
+        <child_model>${piece}</child_model>
+        <child_link>${link}</child_link>
+        <attach_topic>/lab/latch/${piece}/attach</attach_topic>
+        <detach_topic>/lab/latch/${piece}/detach</detach_topic>
+        <output_topic>/lab/latch/${piece}/state</output_topic>
+        <suppress_child_warning>true</suppress_child_warning>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+  <xacro:grasp_latch piece="red_cube" link="cube_link"/>
+  <xacro:grasp_latch piece="blue_cylinder" link="cylinder_link"/>
+  <xacro:grasp_latch piece="green_block" link="block_link"/>
+</robot>

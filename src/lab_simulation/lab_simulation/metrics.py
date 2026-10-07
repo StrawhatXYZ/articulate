@@ -90,9 +90,22 @@ def _row(metric, a, b, higher_is_better, significant=None):
             'better': better, 'significant': significant}
 
 
+# Runs made before these keys were recorded (step 1) used the 3-DOF arm with
+# suction.
+RUN_DEFAULTS = {'robot': 'simple_arm', 'grasp_mode': 'suction'}
+
+
+def run_setting(summary: dict, key: str):
+    """Return a run setting, with the step 1 value for runs that predate it."""
+    return summary['run'].get(key, RUN_DEFAULTS.get(key))
+
+
 def comparability_warnings(a: dict, b: dict) -> List[str]:
     """Return reasons why summaries a and b are not a like-for-like comparison."""
     warnings = []
+    for key, label in (('robot', 'robot'), ('grasp_mode', 'grasp mode')):
+        if run_setting(a, key) != run_setting(b, key):
+            warnings.append(f'different {label}: {run_setting(a, key)} vs {run_setting(b, key)}')
     for key, label in (('seed', 'seed'), ('trials_per_task', 'trials per task')):
         if a['run'].get(key) != b['run'].get(key):
             warnings.append(f"different {label}: {a['run'].get(key)} vs {b['run'].get(key)}")
@@ -146,6 +159,8 @@ def render_report(summary: dict) -> str:
         f"- Commit: {run.get('provenance', {}).get('git_commit', 'unknown')}"
         f" (dirty: {run.get('provenance', {}).get('git_dirty', 'unknown')})",
         f"- Architecture: {run.get('provenance', {}).get('arch', 'unknown')}",
+        f"- Robot: {run_setting(summary, 'robot')},"
+        f" grasp mode: {run_setting(summary, 'grasp_mode')}",
         f"- Seed: {run.get('seed')}, trials per task: {run.get('trials_per_task')}",
         f"- Complete: {run.get('complete')}",
         f"- Real-time factor: {_fmt(run.get('real_time_factor'), 2)},"

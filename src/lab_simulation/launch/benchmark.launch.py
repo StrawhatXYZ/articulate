@@ -6,6 +6,7 @@ Usage:
   ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=10 seed:=7
   ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 \
       rviz:=true realtime:=true
+  ros2 launch lab_simulation benchmark.launch.py grasp_mode:=friction
 """
 
 import os
@@ -38,6 +39,8 @@ def generate_launch_description():
                               description='Show RViz while benchmarking'),
         DeclareLaunchArgument('realtime', default_value='false',
                               description='Run at real time instead of uncapped (for watching)'),
+        DeclareLaunchArgument('grasp_mode', default_value='latched',
+                              description='latched (default) or friction; see the README'),
     ]
 
     simulation = IncludeLaunchDescription(
@@ -53,7 +56,8 @@ def generate_launch_description():
                    '--trials', LaunchConfiguration('trials'),
                    '--seed', LaunchConfiguration('seed'),
                    '--out', LaunchConfiguration('out'),
-                   '--realtime', LaunchConfiguration('realtime')],
+                   '--realtime', LaunchConfiguration('realtime'),
+                   '--grasp-mode', LaunchConfiguration('grasp_mode')],
         parameters=[{'use_sim_time': True}],
         output='screen')
 

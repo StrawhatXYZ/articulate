@@ -6,6 +6,7 @@ from typing import Dict
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseStamped
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from visualization_msgs.msg import Marker, MarkerArray
@@ -17,9 +18,9 @@ TOPIC = '/lab/piece_markers'
 
 # (marker type, scale x, y, z, colour r, g, b) mirroring table_world.sdf.
 SHAPES = {
-    'red_cube': (Marker.CUBE, 0.05, 0.05, 0.05, 0.8, 0.1, 0.1),
-    'blue_cylinder': (Marker.CYLINDER, 0.06, 0.06, 0.10, 0.1, 0.1, 0.8),
-    'green_block': (Marker.CUBE, 0.06, 0.04, 0.04, 0.1, 0.7, 0.2),
+    'red_cube': (Marker.CUBE, 0.03, 0.03, 0.03, 0.8, 0.1, 0.1),
+    'blue_cylinder': (Marker.CYLINDER, 0.03, 0.03, 0.05, 0.1, 0.1, 0.8),
+    'green_block': (Marker.CUBE, 0.05, 0.03, 0.03, 0.1, 0.7, 0.2),
 }
 
 
@@ -74,8 +75,13 @@ def main() -> None:
     node = ObjectMarkers()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:
+        # Ctrl-C can shut the context down while spin() waits; that is a
+        # normal exit, anything else is not.
+        if rclpy.ok():
+            raise
     finally:
         node.destroy_node()
         rclpy.try_shutdown()

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Run a scripted joint-space demonstration on the simulated 3-DOF arm.
+Run a scripted joint-space check on the simulated SO-101.
 
-For each pose in DEMO_SEQUENCE the node publishes a std_msgs/msg/Float64
-position target (radians) on /simple_arm/<joint>/cmd_pos. ros_gz_bridge
-forwards these to Gazebo's JointPositionController, which latches the target
-and holds the joint there. After the hold time the node compares the commanded
-pose with /joint_states and reports the tracking error.
+For each pose in DEMO_SEQUENCE the node sends the arm joints to
+arm_controller (a ros2_control JointTrajectoryController) as a one-point
+trajectory, and the gripper to gripper_controller. After the hold time it
+compares the commanded pose with /joint_states and reports the tracking
+error. It moves the arm only; it does not plan with MoveIt or pick.
 
 The node exits with status 0 if every pose was reached within TOLERANCE_RAD
 and 1 otherwise, so it can also be used as a smoke test.
@@ -18,38 +18,46 @@ Usage:
 
 import sys
 
+from builtin_interfaces.msg import Duration as DurationMsg
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64MultiArray
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-JOINT_NAMES = ('joint_1', 'joint_2', 'joint_3')
+ARM_JOINTS = ('shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll')
+JOINT_NAMES = ARM_JOINTS + ('gripper',)
 
-# (lower, upper) position limits in radians. Must match simple_arm.urdf;
+# (lower, upper) position limits in radians. Must match the SO-101 URDF;
 # test/test_robot_description.py checks this.
 JOINT_LIMITS = {
-    'joint_1': (-3.14159, 3.14159),
-    'joint_2': (-2.356, 2.356),
-    'joint_3': (-2.356, 2.356),
+    'shoulder_pan': (-1.91986, 1.91986),
+    'shoulder_lift': (-1.74533, 1.74533),
+    'elbow_flex': (-1.69, 1.69),
+    'wrist_flex': (-1.65806, 1.65806),
+    'wrist_roll': (-2.74385, 2.84121),
+    'gripper': (-0.174533, 1.74533),
 }
 
-# Each entry is (joint_1, joint_2, joint_3) in radians plus a hold time in
-# seconds. joint_1 is base yaw, joint_2 shoulder pitch, joint_3 elbow pitch.
+# Each entry is (shoulder_pan, shoulder_lift, elbow_flex, wrist_flex,
+# wrist_roll, gripper) in radians plus a hold time in seconds.
 DEMO_SEQUENCE = [
-    ((0.0, 0.0, 0.0), 3.0),   # home
-    ((0.0, 0.9, 0.0), 3.0),   # raise the shoulder
-    ((0.0, 0.9, 0.8), 3.0),   # bend the elbow
-    ((0.8, 0.9, 0.8), 3.0),   # rotate the base to the left
-    ((0.0, 0.0, 0.0), 3.0),   # return home
+    ((0.0, -1.3, 0.6, 1.6, 0.0, 0.6), 3.0),     # home, jaws open
+    ((0.0, 0.0, 0.0, 0.0, 0.0, 0.6), 3.0),      # straight out
+    ((0.0, -0.4, 0.4, 1.6, 0.0, 0.6), 3.0),     # gripper down, 8 cm over the table
+    ((0.8, -0.4, 0.4, 1.6, 1.2, 0.0), 3.0),     # turn left, roll the wrist, close
+    ((-0.8, -0.5, 0.4, 1.6, -1.2, 0.6), 3.0),   # turn right, open
+    ((0.0, -1.3, 0.6, 1.6, 0.0, 0.6), 3.0),     # home
 ]
 
 # Maximum per-joint error accepted as "pose reached".
 TOLERANCE_RAD = 0.05
+MOVE_TIME_S = 2.0
 
-# Targets are latched by the controller, so republishing is not required to
-# hold a pose. A modest rate guards against messages lost during discovery.
+# Trajectories are sent once per pose; a modest timer rate is enough to
+# check the hold time.
 PUBLISH_RATE_HZ = 10.0
 
 
@@ -63,10 +71,10 @@ class ArmDemo(Node):
 
     def __init__(self):
         super().__init__('arm_demo')
-        self._cmd_publishers = {
-            name: self.create_publisher(Float64, f'/simple_arm/{name}/cmd_pos', 10)
-            for name in JOINT_NAMES
-        }
+        self._arm = self.create_publisher(
+            JointTrajectory, '/arm_controller/joint_trajectory', 10)
+        self._gripper = self.create_publisher(
+            Float64MultiArray, '/gripper_controller/commands', 10)
         self.create_subscription(
             JointState, '/joint_states', self._on_joint_states, qos_profile_sensor_data)
 
@@ -78,7 +86,7 @@ class ArmDemo(Node):
         self.done = False
 
         self._timer = self.create_timer(1.0 / PUBLISH_RATE_HZ, self._tick)
-        self.get_logger().info('waiting for /joint_states and the Gazebo bridge')
+        self.get_logger().info('waiting for /joint_states and the controllers')
 
     @property
     def succeeded(self):
@@ -90,8 +98,8 @@ class ArmDemo(Node):
 
     def _ready(self):
         has_feedback = all(name in self._positions for name in JOINT_NAMES)
-        bridged = all(p.get_subscription_count() > 0 for p in self._cmd_publishers.values())
-        return has_feedback and bridged
+        connected = all(p.get_subscription_count() > 0 for p in (self._arm, self._gripper))
+        return has_feedback and connected
 
     def _tick(self):
         if self.done:
@@ -102,7 +110,6 @@ class ArmDemo(Node):
                 self._start_step(0)
             return
 
-        self._publish_targets()
         if self.get_clock().now() >= self._step_end:
             self._check_pose()
             if self._step + 1 < len(DEMO_SEQUENCE):
@@ -123,14 +130,19 @@ class ArmDemo(Node):
             self._targets[name] = target
         self._step_end = self.get_clock().now() + Duration(seconds=hold)
 
-        self.get_logger().info(
-            'pose {}/{}: ({:.2f}, {:.2f}, {:.2f}) rad, holding {:.1f} s'.format(
-                index + 1, len(DEMO_SEQUENCE), *self._targets.values(), hold))
+        self.get_logger().info('pose {}/{}: ({}) rad, holding {:.1f} s'.format(
+            index + 1, len(DEMO_SEQUENCE),
+            ', '.join(f'{v:.2f}' for v in self._targets.values()), hold))
         self._publish_targets()
 
     def _publish_targets(self):
-        for name, target in self._targets.items():
-            self._cmd_publishers[name].publish(Float64(data=target))
+        trajectory = JointTrajectory(joint_names=list(ARM_JOINTS))
+        trajectory.points = [JointTrajectoryPoint(
+            positions=[self._targets[name] for name in ARM_JOINTS],
+            time_from_start=DurationMsg(sec=int(MOVE_TIME_S),
+                                        nanosec=int(MOVE_TIME_S % 1 * 1e9)))]
+        self._arm.publish(trajectory)
+        self._gripper.publish(Float64MultiArray(data=[self._targets['gripper']]))
 
     def _check_pose(self):
         errors = {

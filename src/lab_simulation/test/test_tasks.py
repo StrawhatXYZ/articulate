@@ -1,200 +1,271 @@
-"""Tests for the reach and pick-and-place tasks, using an in-memory fake world."""
+"""
+Tests for the benchmark tasks against a fake robot and world.
+
+The fakes use the real SO-101 kinematics: the arm jumps to commanded joint
+angles, the gripper closes on a piece only if it is between the jaws, and a
+held piece moves with the grasp frame.
+"""
 
 import math
 import random
 
 from lab_simulation import layout
-from lab_simulation.kinematics import end_effector_rotation, forward, rotate, unrotate
-from lab_simulation.tasks import MoveResult, PickPlaceTask, ReachTask
+from lab_simulation.tasks import (
+    CARRY_TOLERANCE_M, GRIP_MAX_OFFSET_M, LATCH_EASE_RAD, MoveResult, PickPlaceTask, PiecePose,
+    ReachTask, vertical_rotation)
+import numpy as np
 import pytest
+
+HOME = (0.0, -1.3, 0.6, 1.6, 0.0)
+OPEN, CLOSED, STALL = 0.6, -0.17, 0.19
+# Where the moving jaw pushes a gripped piece, in the grasp frame.
+PRESSED = np.array([0.009, 0.0, 0.0])
 
 
 class FakeWorld:
-    """
-    Stand-in for arm.Arm and scene.Scene.
+    """Arm, gripper and scene in one, sharing state."""
 
-    Moves complete instantly (1 simulated second each). Options inject faults.
-    """
-
-    def __init__(self, positions=None, joint_bias=0.0, drop=False, stuck=False,
-                 knock_off=False, sag=0.0, topple_drop=0.0):
-        positions = positions or {'red_cube': (0.2, 0.0), 'blue_cylinder': (-0.2, 0.0),
-                                  'green_block': (0.0, -0.2)}
-        self.poses = {n: (x, y, layout.PIECES[n].centre_z) for n, (x, y) in positions.items()}
-        self.q = (0.0, 0.0, 0.0)
+    def __init__(self, kin, positions=None):
+        self.kin = kin
+        self.q = HOME
+        self.gripper = OPEN
         self.time = 0.0
-        self.attached = None
-        self.offset = None
-        self.joint_bias = joint_bias
-        self.drop = drop
-        self.stuck = stuck
-        self.knock_off = knock_off
-        self.sag = sag  # a held piece hangs this far below its grip (joint compliance)
-        self.topple_drop = topple_drop  # the placed piece rests this much lower (toppled)
-        self.commanded_tips = []
-        self.attached_last = None
+        self.held = None
+        self.grip_offset = None
+        self.latched = set()
+        self.latch_calls = []
+        self.scene_updates = []
+        self.moves = []
+        self.fail_plan_at = None      # move index that fails to plan
+        self.drop_on_move = None      # move index after which a held piece falls out
+        self.miss = False             # piece slides away as the jaws close
+        self.held_at = None
+        positions = positions or layout.sample_layout(random.Random(1))
+        self.pieces = {name: PiecePose(x, y, layout.PIECES[name].centre_z)
+                       for name, (x, y) in positions.items()}
 
-    # arm.Arm interface
+    # arm
     def joint_positions(self):
         return self.q
 
-    def move_to(self, q, timeout_s, monitor=None):
+    def move_to(self, q):
+        index = len(self.moves)
+        self.moves.append(tuple(q))
         self.time += 1.0
-        self.commanded_tips.append(forward(q))
-        if self.stuck:
-            return MoveResult(False, False, timeout_s, 1.0)
-        self.q = (q[0] + self.joint_bias, q[1], q[2])
-        if self.attached and not self.drop:
-            tip = forward(self.q)
-            # Suction fixes the piece in the end-effector frame: it rotates with the arm.
-            held = tuple(t + o for t, o in
-                         zip(tip, rotate(end_effector_rotation(self.q), self.offset)))
-            self.poses[self.attached] = (held[0], held[1], held[2] - self.sag)
-        if monitor is not None and not monitor():
-            return MoveResult(False, True, 0.5, 0.0)
-        return MoveResult(True, False, 0.5, 0.0)
+        if index == self.fail_plan_at:
+            return MoveResult(False, False, 0.0, math.inf)
+        self.q = tuple(q)
+        if self.held is not None:
+            if index == self.drop_on_move and self.held not in self.latched:
+                self._drop()
+            else:
+                tcp = self.kin.forward(self.q)
+                x, y, z = (tcp @ np.array([*self.grip_offset, 1.0]))[:3]
+                self.pieces[self.held] = PiecePose(x, y, z)
+        return MoveResult(True, True, 1.0, 0.0)
 
-    # scene.Scene interface
-    def pose(self, name):
-        return self.poses[name]
+    def home(self):
+        return self.move_to(HOME)
 
-    def grasp_gap(self, name, tip):
-        return layout.grasp_gap(layout.PIECES[name], self.poses[name], tip)
-
-    def attach(self, name, tip):
-        if self.grasp_gap(name, tip) > layout.GRASP_GAP_MAX:
-            return False
-        self.attached = name
-        world_offset = tuple(p - t for p, t in zip(self.poses[name], tip))
-        self.offset = unrotate(end_effector_rotation(self.q), world_offset)
+    # gripper
+    def release(self):
+        self.gripper = OPEN
+        if self.held is not None and self.held not in self.latched:
+            self._drop()
         return True
 
-    def detach(self, name):
-        if self.attached == name:
-            self.attached_last = name
-            self.attached = None
+    def grip(self):
+        tcp = self.kin.forward(self.q)
+        for name, pose in self.pieces.items():
+            local = (np.linalg.inv(tcp) @ np.array([*pose.xyz, 1.0]))[:3]
+            if np.linalg.norm(local) < 0.02 and not self.miss:
+                self.held, self.grip_offset = name, PRESSED
+                x, y, z = (tcp @ np.array([*PRESSED, 1.0]))[:3]
+                self.pieces[name] = PiecePose(x, y, z)
+                self.gripper = STALL
+                return STALL
+        self.gripper = CLOSED
+        return CLOSED
+
+    def hold(self, angle):
+        self.held_at = angle
+
+    def _drop(self):
+        p = self.pieces[self.held]
+        self.pieces[self.held] = PiecePose(p.x, p.y, layout.PIECES[self.held].centre_z)
+        self.held = None
+
+    # scene
+    def pose(self, name):
+        return self.pieces[name]
+
+    def latch(self, name):
+        self.latch_calls.append(name)
+        self.latched.add(name)
+        return True
+
+    def unlatch(self, name):
+        self.latched.discard(name)
+        if self.held == name and self.gripper == OPEN:
+            self._drop()
+
+    def update_planning_scene(self, exclude=None, held=None):
+        self.scene_updates.append((exclude, held))
 
     def wait_settled(self, timeout_s=3.0):
-        for name, (x, y, _) in self.poses.items():
-            if self.knock_off:
-                self.poses[name] = (x, y, -1.0)
-            elif name == self.attached_last:
-                self.poses[name] = (x, y, layout.PIECES[name].centre_z - self.topple_drop)
-            else:
-                self.poses[name] = (x, y, layout.PIECES[name].centre_z)
         return True
 
-
-def now_of(world):
-    return lambda: world.time
-
-
-def test_reach_success():
-    world = FakeWorld()
-    result = ReachTask(world, now_of(world)).run(random.Random(1), 0)
-    assert result.success and result.failure is None
-    assert result.error_m < 1e-9
-    assert result.cycle_time_s == 1.0
-    assert result.details['max_joint_error_rad'] == 0.0
+    def now(self):
+        return self.time
 
 
-def test_reach_miss_is_placement_error():
-    world = FakeWorld(joint_bias=0.2)
-    result = ReachTask(world, now_of(world)).run(random.Random(1), 0)
-    assert not result.success and result.failure == 'placement_error'
-    assert result.error_m > 0.01
+@pytest.fixture
+def world(lab_kinematics):
+    return FakeWorld(lab_kinematics)
 
 
-def test_reach_timeout():
-    world = FakeWorld(stuck=True)
-    result = ReachTask(world, now_of(world)).run(random.Random(1), 0)
-    assert result.failure == 'timeout'
+def pick_task(world, mode='latched'):
+    return PickPlaceTask(world, world, world, world.kin, world.now, mode)
 
 
-def test_pick_place_success_lands_on_target():
-    world = FakeWorld()
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
+def test_vertical_rotation_points_down_and_closes_along_yaw():
+    r = vertical_rotation(0.7)
+    assert r[:, 2] == pytest.approx([0, 0, -1])
+    assert r[:, 0] == pytest.approx([math.cos(0.7), math.sin(0.7), 0])
+    assert np.linalg.det(r) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize('seed', range(5))
+def test_reach_succeeds_and_measures_error(world, seed):
+    result = ReachTask(world, world, world.kin, world.now).run(random.Random(seed), 0)
     assert result.success, result
-    assert result.error_m < 1e-6
-    assert world.attached is None
+    assert result.error_m < 1e-3
+    assert world.scene_updates == [(None, None)]
+
+
+def test_reach_planning_failure(world):
+    world.fail_plan_at = 0
+    result = ReachTask(world, world, world.kin, world.now).run(random.Random(0), 0)
+    assert not result.success and result.failure == 'planning_failed'
+
+
+@pytest.mark.parametrize('seed', range(8))
+def test_pick_place_succeeds_and_latches(world, seed):
+    result = pick_task(world).run(random.Random(seed), 0)
+    assert result.success, result
     piece = result.details['piece']
-    assert math.dist(world.poses[piece][:2], result.details['target']) < 1e-6
-    assert result.disturbed is False
+    assert world.latch_calls == [piece]
+    # Eases the squeeze before latching, then holds there.
+    assert world.held_at == pytest.approx(STALL + LATCH_EASE_RAD)
+    assert result.error_m < 0.005
+    assert result.details['gripper_stall_rad'] == STALL
+    assert world.pieces[piece].xy == pytest.approx(result.details['target'], abs=0.005)
+    assert world.q == HOME and not world.latched
 
 
-def test_pick_place_grasp_miss_never_attaches():
-    world = FakeWorld(joint_bias=0.2)
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
+def test_pick_place_plans_around_the_other_pieces(world):
+    result = pick_task(world).run(random.Random(3), 0)
+    piece = result.details['piece']
+    # Approach and retreat ignore the target piece; the carry moves it with
+    # the gripper; going home sees every piece again.
+    assert (piece, None) in world.scene_updates
+    assert (None, piece) in world.scene_updates
+    assert world.scene_updates[-1] == (None, None)
+
+
+def test_friction_mode_never_latches(world):
+    result = pick_task(world, 'friction').run(random.Random(2), 0)
+    assert result.success, result
+    assert world.latch_calls == []
+    assert world.held_at is None       # keeps squeezing
+
+
+def test_closing_on_nothing_is_a_miss(world):
+    world.miss = True
+    result = pick_task(world).run(random.Random(0), 0)
     assert result.failure == 'grasp_miss'
-    assert result.details['grasp_gap_m'] > layout.GRASP_GAP_MAX
+    assert result.details['gripper_stall_rad'] == CLOSED
+    assert world.latch_calls == []
 
 
-def test_pick_place_drop_detected():
-    world = FakeWorld(drop=True)
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
+def test_a_stalled_jaw_away_from_the_piece_is_a_miss(world, monkeypatch):
+    """Jaws blocked by something else (e.g. a neighbour) must not latch."""
+    task = pick_task(world)
+
+    def pushed_away_then_stalled():
+        # The descending jaw shoved the piece 3 cm aside, then stalled anyway.
+        for name, pose in world.pieces.items():
+            tcp = world.kin.forward(world.q)
+            if math.dist(pose.xyz, tcp[:3, 3]) < 0.02:
+                world.pieces[name] = pose._replace(x=pose.x + 0.03)
+        return STALL
+    monkeypatch.setattr(world, 'grip', pushed_away_then_stalled)
+    result = task.run(random.Random(0), 0)
+    assert result.failure == 'grasp_miss'
+    assert result.details['grip_offset_m'] > GRIP_MAX_OFFSET_M
+    assert world.latch_calls == []
+
+
+def test_friction_slip_during_carry_is_dropped(world):
+    world.drop_on_move = 3      # hover, grasp, lift: falls out on the lift
+    result = pick_task(world, 'friction').run(random.Random(0), 0)
     assert result.failure == 'dropped'
-    assert world.attached is None
-    assert result.details['carry_deviation_m'] > 0.01
+    assert result.details['carry_deviation_m'] > CARRY_TOLERANCE_M
 
 
-def test_pick_place_unreachable_piece():
-    world = FakeWorld(positions={'red_cube': (0.6, 0.0), 'blue_cylinder': (-0.6, 0.0),
-                                 'green_block': (0.0, -0.6)})
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
-    assert result.failure == 'unreachable'
+def test_latched_piece_does_not_slip(world):
+    world.drop_on_move = 3
+    assert pick_task(world).run(random.Random(0), 0).success
 
 
-def test_pick_place_piece_knocked_off_table_is_placement_error():
-    world = FakeWorld(knock_off=True)
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
+@pytest.mark.parametrize('move', range(4))
+def test_planning_failure_fails_the_trial_and_releases(world, move):
+    world.fail_plan_at = move
+    result = pick_task(world).run(random.Random(0), 0)
+    assert result.failure == 'planning_failed'
+    assert not world.latched and world.gripper == OPEN
+
+
+def test_placement_error_when_the_piece_lands_tilted(world, monkeypatch):
+    task = pick_task(world)
+    original = world.pose
+
+    def tilted(name):
+        pose = original(name)
+        return pose._replace(tilt_deg=40.0) if world.held is None and name in world.pieces \
+            and world.moves else pose
+    monkeypatch.setattr(world, 'pose', tilted)
+    result = task.run(random.Random(0), 0)
     assert result.failure == 'placement_error'
-    assert result.details['final'][2] == -1.0
-    assert result.disturbed is True
+    assert result.details['final_tilt_deg'] == 40.0
 
 
-def test_toppled_piece_on_target_is_placement_error():
-    """A toppled piece rests lower than upright (a lying cylinder: 2 cm): not placed."""
-    world = FakeWorld(topple_drop=0.02)
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
-    assert result.failure == 'placement_error'
+def test_unknown_grasp_mode_rejected(world):
+    with pytest.raises(ValueError):
+        pick_task(world, 'suction')
 
 
-def test_result_serialises():
-    world = FakeWorld()
-    data = ReachTask(world, now_of(world)).run(random.Random(1), 4).to_dict()
-    assert data['task'] == 'reach' and data['index'] == 4
-    assert set(data) == {'task', 'index', 'success', 'failure', 'cycle_time_s', 'error_m',
-                         'disturbed', 'details'}
+def test_block_is_gripped_across_its_narrow_side(world):
+    """The jaws close along the block's y axis (3 cm), not its 5 cm length."""
+    rng = random.Random(0)
+    for _ in range(50):
+        if pick_task(world).run(rng, 0).details['piece'] == 'green_block':
+            break
+        world.__init__(world.kin)
+    yaw = world.kin.grasp_yaw(world.moves[1])
+    piece_yaw = 0.0
+    assert abs(math.sin(yaw - piece_yaw)) == pytest.approx(1.0, abs=1e-3)
 
 
-def test_pick_descends_to_the_standoff_above_the_piece():
-    world = FakeWorld()
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
-    piece = layout.PIECES[result.details['piece']]
-    start_z = result.details['start'][2]
-    grasp_tip_z = world.commanded_tips[1][2]  # moves: hover, descend, ...
-    contact_z = start_z + piece.half_height + layout.TIP_RADIUS
-    assert grasp_tip_z == pytest.approx(contact_z + layout.GRASP_STANDOFF, abs=1e-6)
-
-
-def test_held_piece_within_a_few_millimetres_of_its_grip_is_not_dropped():
-    """Measured hold: within 0.6 cm of the rigid-grip position."""
-    world = FakeWorld(sag=0.005)
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
-    assert result.failure != 'dropped'
-    assert result.details['carry_deviation_m'] == pytest.approx(0.005, abs=1e-6)
-
-
-def test_piece_separating_from_its_grip_is_dropped():
-    world = FakeWorld(sag=0.02)
-    result = PickPlaceTask(world, world, now_of(world)).run(random.Random(3), 0)
-    assert result.failure == 'dropped'
-
-
-def test_held_piece_rotating_with_the_arm_is_not_dropped():
-    """The carry changes the forearm pitch; a rigidly held piece swings with it."""
-    for seed in range(10):
-        world = FakeWorld()
-        result = PickPlaceTask(world, world, now_of(world)).run(random.Random(seed), 0)
-        assert result.failure != 'dropped', (seed, result.details)
-        assert result.details['carry_deviation_m'] < 1e-6, (seed, result.details)
+def test_jaws_slide_off_the_placed_piece_before_lifting(world):
+    """Lifting straight up would drag the piece pressed against the fixed jaw."""
+    from lab_simulation.tasks import RELEASE_CLEARANCE_M
+    assert pick_task(world).run(random.Random(0), 0).success
+    place, clear, retreat = (world.kin.forward(q) for q in world.moves[4:7])
+    shift = clear[:3, 3] - place[:3, 3]
+    # The piece was pressed against the fixed jaw, on the grasp frame's +x
+    # side: moving +x takes that jaw away from it.
+    assert PRESSED[0] > 0
+    assert shift @ place[:3, 0] == pytest.approx(RELEASE_CLEARANCE_M, abs=1e-4)
+    assert shift[2] == pytest.approx(0.0, abs=1e-4)
+    assert retreat[2, 3] - clear[2, 3] == pytest.approx(layout.HOVER, abs=1e-4)

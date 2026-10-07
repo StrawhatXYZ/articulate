@@ -2,6 +2,8 @@
 #
 # Each entry connects one Gazebo transport topic to one ROS 2 topic.
 # direction: GZ_TO_ROS (simulator output) or ROS_TO_GZ (commands).
+# Joint states and joint commands do not pass through the bridge: the arm
+# runs ros2_control inside Gazebo (gz_ros2_control).
 
 # Simulation clock, required for use_sim_time.
 - ros_topic_name: /clock
@@ -9,32 +11,6 @@
   ros_type_name: rosgraph_msgs/msg/Clock
   gz_type_name: gz.msgs.Clock
   direction: GZ_TO_ROS
-
-# Joint feedback from the JointStatePublisher system.
-- ros_topic_name: /joint_states
-  gz_topic_name: /world/table_world/model/simple_arm/joint_state
-  ros_type_name: sensor_msgs/msg/JointState
-  gz_type_name: gz.msgs.Model
-  direction: GZ_TO_ROS
-
-# Position targets (radians) for each JointPositionController.
-- ros_topic_name: /simple_arm/joint_1/cmd_pos
-  gz_topic_name: /simple_arm/joint_1/cmd_pos
-  ros_type_name: std_msgs/msg/Float64
-  gz_type_name: gz.msgs.Double
-  direction: ROS_TO_GZ
-
-- ros_topic_name: /simple_arm/joint_2/cmd_pos
-  gz_topic_name: /simple_arm/joint_2/cmd_pos
-  ros_type_name: std_msgs/msg/Float64
-  gz_type_name: gz.msgs.Double
-  direction: ROS_TO_GZ
-
-- ros_topic_name: /simple_arm/joint_3/cmd_pos
-  gz_topic_name: /simple_arm/joint_3/cmd_pos
-  ros_type_name: std_msgs/msg/Float64
-  gz_type_name: gz.msgs.Double
-  direction: ROS_TO_GZ
 
 # Live world pose of each piece, from its PosePublisher (one topic per piece:
 # the combined pose stream loses entity names when bridged).
@@ -56,58 +32,59 @@
   gz_type_name: gz.msgs.Pose
   direction: GZ_TO_ROS
 
-# Suction: engage or release one piece (see table_world.sdf).
-- ros_topic_name: /simple_arm/suction/red_cube/attach
-  gz_topic_name: /simple_arm/suction/red_cube/attach
+# Grasp latch: lock a gripped piece to the gripper, or release it
+# (see urdf/lab_so101.urdf.xacro).
+- ros_topic_name: /lab/latch/red_cube/attach
+  gz_topic_name: /lab/latch/red_cube/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-- ros_topic_name: /simple_arm/suction/red_cube/detach
-  gz_topic_name: /simple_arm/suction/red_cube/detach
+- ros_topic_name: /lab/latch/red_cube/detach
+  gz_topic_name: /lab/latch/red_cube/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-- ros_topic_name: /simple_arm/suction/blue_cylinder/attach
-  gz_topic_name: /simple_arm/suction/blue_cylinder/attach
+- ros_topic_name: /lab/latch/blue_cylinder/attach
+  gz_topic_name: /lab/latch/blue_cylinder/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-- ros_topic_name: /simple_arm/suction/blue_cylinder/detach
-  gz_topic_name: /simple_arm/suction/blue_cylinder/detach
+- ros_topic_name: /lab/latch/blue_cylinder/detach
+  gz_topic_name: /lab/latch/blue_cylinder/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-- ros_topic_name: /simple_arm/suction/green_block/attach
-  gz_topic_name: /simple_arm/suction/green_block/attach
+- ros_topic_name: /lab/latch/green_block/attach
+  gz_topic_name: /lab/latch/green_block/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-- ros_topic_name: /simple_arm/suction/green_block/detach
-  gz_topic_name: /simple_arm/suction/green_block/detach
+- ros_topic_name: /lab/latch/green_block/detach
+  gz_topic_name: /lab/latch/green_block/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
 
-# Suction state: "attached" or "detached", published when it changes.
-- ros_topic_name: /simple_arm/suction/red_cube/state
-  gz_topic_name: /simple_arm/suction/red_cube/state
+# Latch state: "attached" or "detached", published when it changes.
+- ros_topic_name: /lab/latch/red_cube/state
+  gz_topic_name: /lab/latch/red_cube/state
   ros_type_name: std_msgs/msg/String
   gz_type_name: gz.msgs.StringMsg
   direction: GZ_TO_ROS
 
-- ros_topic_name: /simple_arm/suction/blue_cylinder/state
-  gz_topic_name: /simple_arm/suction/blue_cylinder/state
+- ros_topic_name: /lab/latch/blue_cylinder/state
+  gz_topic_name: /lab/latch/blue_cylinder/state
   ros_type_name: std_msgs/msg/String
   gz_type_name: gz.msgs.StringMsg
   direction: GZ_TO_ROS
 
-- ros_topic_name: /simple_arm/suction/green_block/state
-  gz_topic_name: /simple_arm/suction/green_block/state
+- ros_topic_name: /lab/latch/green_block/state
+  gz_topic_name: /lab/latch/green_block/state
   ros_type_name: std_msgs/msg/String
   gz_type_name: gz.msgs.StringMsg
   direction: GZ_TO_ROS

@@ -1,0 +1,40 @@
+# ros2_control for the simulated SO-101, loaded by the gz_ros2_control plugin.
+#
+# The controller rate matches Gazebo's 1 ms physics step. Position commands
+# are turned into joint velocities by gz_ros2_control with
+# position_proportional_gain; its default (0.1) settles a joint in ~10 s.
+controller_manager:
+  ros__parameters:
+    update_rate: 1000
+    use_sim_time: true
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    gripper_controller:
+      # Not a gripper action controller: those stop squeezing once the jaw
+      # stalls on an object. This one keeps commanding the target.
+      type: position_controllers/JointGroupPositionController
+
+arm_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan
+      - shoulder_lift
+      - elbow_flex
+      - wrist_flex
+      - wrist_roll
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+
+gripper_controller:
+  ros__parameters:
+    joints:
+      - gripper
+
+gz_ros_control:
+  ros__parameters:
+    position_proportional_gain: 10.0

@@ -5,12 +5,12 @@
   A simple Gazebo world with:
     - A ground plane
     - A table (1 m x 1 m, top surface at z = 0.75 m)
-    - Three coloured, flat-topped objects on the table for the arm to pick
-    - The 3-DOF arm, included from simple_arm.sdf and welded to the table top
+    - Three coloured pieces on the table for the SO-101 to pick
     - A directional light source
 
-  Loaded by launch/arm_world.launch.py, which adds this package's worlds/
-  directory to GZ_SIM_RESOURCE_PATH so the model:// include resolves.
+  The SO-101 is not part of the world: arm_world.launch.py spawns it from
+  robot_description (urdf/lab_so101.urdf.xacro), the single description
+  shared by Gazebo, RViz and MoveIt.
 -->
 <sdf version="1.8">
   <world name="table_world">
@@ -54,7 +54,8 @@
 
     <!-- ══════════════════════════════════════════════════════════════
          TABLE
-         A 1m x 1m table, 75cm tall. The arm will be placed on top.
+         A 1m x 1m table, 75cm tall. The SO-101 stands at its centre, spawned
+         from robot_description by arm_world.launch.py.
          ══════════════════════════════════════════════════════════════ -->
     <model name="table">
       <static>true</static>
@@ -84,32 +85,40 @@
 
     <!-- ══════════════════════════════════════════════════════════════
          OBJECTS ON THE TABLE
-         Three simple objects the arm can try to pick up.
-         Each is 100 g, with the inertia of its solid primitive.
-         Default positions are 0.20 m from the base axis, inside the arm's reach.
+         Three pieces sized for the SO-101's jaws: each is 3 cm across the
+         side the jaws close on. Inertias are those of the solid primitive.
+         Default positions are inside the arm's workspace (layout.py).
          ══════════════════════════════════════════════════════════════ -->
 
-    <!-- Red cube -->
+    <!-- Red cube: 3 cm -->
     <model name="red_cube">
       <link name="cube_link">
         <inertial>
-          <mass>0.1</mass>
+          <mass>0.03</mass>
           <inertia>
-            <ixx>0.0000417</ixx><ixy>0</ixy><ixz>0</ixz>
-            <iyy>0.0000417</iyy><iyz>0</iyz><izz>0.0000417</izz>
+            <ixx>4.5e-06</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>4.5e-06</iyy><iyz>0</iyz><izz>4.5e-06</izz>
           </inertia>
         </inertial>
         <collision name="cube_collision">
           <geometry>
             <box>
-              <size>0.05 0.05 0.05</size>
+              <size>0.03 0.03 0.03</size>
             </box>
           </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+          </surface>
         </collision>
         <visual name="cube_visual">
           <geometry>
             <box>
-              <size>0.05 0.05 0.05</size>
+              <size>0.03 0.03 0.03</size>
             </box>
           </geometry>
           <material>
@@ -118,7 +127,7 @@
           </material>
         </visual>
       </link>
-      <pose>0.173 0.10 0.775 0 0 0</pose>
+      <pose>0.187 0.102 0.765 0 0 0</pose>
       <!-- Publishes this piece's world pose on /model/<name>/pose. -->
       <plugin filename="gz-sim-pose-publisher-system"
               name="gz::sim::systems::PosePublisher">
@@ -129,29 +138,37 @@
       </plugin>
     </model>
 
-    <!-- Blue cylinder -->
+    <!-- Blue cylinder: 3 cm across, 5 cm tall -->
     <model name="blue_cylinder">
       <link name="cylinder_link">
         <inertial>
-          <mass>0.1</mass>
+          <mass>0.035</mass>
           <inertia>
-            <ixx>0.000106</ixx><ixy>0</ixy><ixz>0</ixz>
-            <iyy>0.000106</iyy><iyz>0</iyz><izz>0.000045</izz>
+            <ixx>9.26e-06</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>9.26e-06</iyy><iyz>0</iyz><izz>3.938e-06</izz>
           </inertia>
         </inertial>
         <collision name="cylinder_collision">
           <geometry>
             <cylinder>
-              <radius>0.03</radius>
-              <length>0.10</length>
+              <radius>0.015</radius>
+              <length>0.05</length>
             </cylinder>
           </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+          </surface>
         </collision>
         <visual name="cylinder_visual">
           <geometry>
             <cylinder>
-              <radius>0.03</radius>
-              <length>0.10</length>
+              <radius>0.015</radius>
+              <length>0.05</length>
             </cylinder>
           </geometry>
           <material>
@@ -160,7 +177,7 @@
           </material>
         </visual>
       </link>
-      <pose>-0.173 0.10 0.80 0 0 0</pose>
+      <pose>0.187 -0.102 0.775 0 0 0</pose>
       <!-- Publishes this piece's world pose on /model/<name>/pose. -->
       <plugin filename="gz-sim-pose-publisher-system"
               name="gz::sim::systems::PosePublisher">
@@ -171,27 +188,35 @@
       </plugin>
     </model>
 
-    <!-- Green block: flat-topped so it can be grasped by suction and cannot roll -->
+    <!-- Green block: 5 x 3 x 3 cm, gripped across its 3 cm width -->
     <model name="green_block">
       <link name="block_link">
         <inertial>
-          <mass>0.1</mass>
+          <mass>0.045</mass>
           <inertia>
-            <ixx>0.00002667</ixx><ixy>0</ixy><ixz>0</ixz>
-            <iyy>0.00004333</iyy><iyz>0</iyz><izz>0.00004333</izz>
+            <ixx>6.75e-06</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1.275e-05</iyy><iyz>0</iyz><izz>1.275e-05</izz>
           </inertia>
         </inertial>
         <collision name="block_collision">
           <geometry>
             <box>
-              <size>0.06 0.04 0.04</size>
+              <size>0.05 0.03 0.03</size>
             </box>
           </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+          </surface>
         </collision>
         <visual name="block_visual">
           <geometry>
             <box>
-              <size>0.06 0.04 0.04</size>
+              <size>0.05 0.03 0.03</size>
             </box>
           </geometry>
           <material>
@@ -200,7 +225,7 @@
           </material>
         </visual>
       </link>
-      <pose>0.0 -0.20 0.77 0 0 0</pose>
+      <pose>0.219 0.000 0.765 0 0 0</pose>
       <!-- Publishes this piece's world pose on /model/<name>/pose. -->
       <plugin filename="gz-sim-pose-publisher-system"
               name="gz::sim::systems::PosePublisher">
@@ -210,62 +235,6 @@
         <update_frequency>50</update_frequency>
       </plugin>
     </model>
-
-    <!-- ══════════════════════════════════════════════════════════════
-         ROBOT ARM
-
-         Included directly into the world rather than spawned at runtime, so
-         the system plugins declared inside the model (joint controllers and
-         joint state publisher) are loaded with the world.
-
-         This <pose> is the single source of the arm's placement: it replaces
-         any pose inside the included model. It places base_link on the table
-         top and must match the world_joint origin in simple_arm.urdf.
-         ══════════════════════════════════════════════════════════════ -->
-    <include>
-      <uri>model://simple_arm.sdf</uri>
-      <name>simple_arm</name>
-      <pose>0 0 0.75 0 0 0</pose>
-
-      <!--
-        Simulated suction: one DetachableJoint per piece, fixing the piece to
-        the end effector at its current offset. Declared here rather than in
-        simple_arm.sdf so the arm model does not name this world's pieces.
-        lab_simulation.scene engages suction only when the tip is within 5 mm
-        of the piece (layout.GRASP_GAP_MAX), and waits for the "attached" or
-        "detached" confirmation each plugin publishes on its output_topic.
-      -->
-      <plugin filename="gz-sim-detachable-joint-system"
-              name="gz::sim::systems::DetachableJoint">
-        <parent_link>end_effector</parent_link>
-        <child_model>red_cube</child_model>
-        <child_link>cube_link</child_link>
-        <attach_topic>/simple_arm/suction/red_cube/attach</attach_topic>
-        <detach_topic>/simple_arm/suction/red_cube/detach</detach_topic>
-        <output_topic>/simple_arm/suction/red_cube/state</output_topic>
-        <suppress_child_warning>true</suppress_child_warning>
-      </plugin>
-      <plugin filename="gz-sim-detachable-joint-system"
-              name="gz::sim::systems::DetachableJoint">
-        <parent_link>end_effector</parent_link>
-        <child_model>blue_cylinder</child_model>
-        <child_link>cylinder_link</child_link>
-        <attach_topic>/simple_arm/suction/blue_cylinder/attach</attach_topic>
-        <detach_topic>/simple_arm/suction/blue_cylinder/detach</detach_topic>
-        <output_topic>/simple_arm/suction/blue_cylinder/state</output_topic>
-        <suppress_child_warning>true</suppress_child_warning>
-      </plugin>
-      <plugin filename="gz-sim-detachable-joint-system"
-              name="gz::sim::systems::DetachableJoint">
-        <parent_link>end_effector</parent_link>
-        <child_model>green_block</child_model>
-        <child_link>block_link</child_link>
-        <attach_topic>/simple_arm/suction/green_block/attach</attach_topic>
-        <detach_topic>/simple_arm/suction/green_block/detach</detach_topic>
-        <output_topic>/simple_arm/suction/green_block/state</output_topic>
-        <suppress_child_warning>true</suppress_child_warning>
-      </plugin>
-    </include>
 
     <!-- ══════════════════════════════════════════════════════════════
          LIGHT

@@ -22,12 +22,13 @@ import time
 from typing import Callable, List, Sequence, Tuple
 
 from . import metrics
-from .tasks import SimulationUnresponsive, TrialResult
+from .tasks import GRASP_MODES, SimulationUnresponsive, TrialResult
 
 EXIT_OK = 0
 EXIT_NO_SIMULATION = 2
 EXIT_UNRESPONSIVE = 3
 UNTHROTTLED_RTF = 1000
+ROBOT = 'so101'
 
 
 def make_run_dir(base: Path, now: datetime) -> Path:
@@ -124,25 +125,33 @@ def run(args) -> int:
     import rclpy
     from rclpy.parameter import Parameter
 
-    from .arm import Arm
-    from .layout import sample_layout
+    from . import layout
+    from .arm import Arm, JointFeedback
+    from .description import robot_description
+    from .gripper import Gripper
     from .ros_util import sim_now, spin_until
     from .scene import Scene
-    from .tasks import HOME, MOVE_TIMEOUT_S, PickPlaceTask, ReachTask
+    from .so101_kinematics import Kinematics
+    from .tasks import PickPlaceTask, ReachTask
 
     rclpy.init()
     node = rclpy.create_node(
         'benchmark', parameter_overrides=[Parameter('use_sim_time', value=True)])
-    arm = Arm(node)
+    feedback = JointFeedback(node)
+    arm = Arm(node, feedback)
+    gripper = Gripper(node, feedback)
     scene = Scene(node)
+    kinematics = Kinematics(robot_description())
     try:
         ready = spin_until(
             node, lambda: sim_now(node) > 0 and arm.joint_positions() is not None
-            and scene.has_poses(), sim_timeout_s=float('inf'), wall_timeout_s=60.0)
+            and gripper.ready() and scene.has_poses(),
+            sim_timeout_s=float('inf'), wall_timeout_s=120.0) and arm.wait_for_server()
     except SimulationUnresponsive:
         ready = False
     if not ready:
-        print('simulation not running: no clock, joint states or piece poses', file=sys.stderr)
+        print('simulation not running: no clock, joint states, piece poses or move_group',
+              file=sys.stderr)
         node.destroy_node()
         rclpy.try_shutdown()
         return EXIT_NO_SIMULATION
@@ -150,20 +159,29 @@ def run(args) -> int:
     # Uncapped by default for throughput; real time when someone is watching.
     rtf_set = False if args.realtime else set_real_time_factor(UNTHROTTLED_RTF)
     now = (lambda: sim_now(node))
-    all_tasks = {'reach': ReachTask(arm, now), 'pick_place': PickPlaceTask(arm, scene, now)}
+    all_tasks = {
+        'reach': ReachTask(arm, scene, kinematics, now),
+        'pick_place': PickPlaceTask(arm, gripper, scene, kinematics, now, args.grasp_mode),
+    }
     tasks = list(all_tasks.values()) if args.task == 'all' else [all_tasks[args.task]]
 
     def reset(rng: random.Random) -> bool:
-        scene.detach_all()
-        if not arm.move_to(HOME, MOVE_TIMEOUT_S).reached:
+        # Let go of everything, go home past no pieces, then lay out the scene.
+        scene.unlatch_all()
+        gripper.release()
+        scene.update_planning_scene(exclude=list(layout.PIECES))
+        home = arm.home()
+        if not (home.planned and home.reached):
             return False
-        return scene.reset(sample_layout(rng))
+        return scene.reset(layout.sample_layout(rng))
 
     run_dir = make_run_dir(Path(args.out), datetime.now())
     wall_start, sim_start = time.monotonic(), sim_now(node)
     trials, complete = execute(tasks, args.trials, args.seed, reset, run_dir / 'trials.jsonl')
     wall, sim = time.monotonic() - wall_start, sim_now(node) - sim_start
     run_info = {
+        'robot': ROBOT,
+        'grasp_mode': args.grasp_mode,
         'tasks': [task.name for task in tasks],
         'trials_per_task': args.trials,
         'seed': args.seed,
@@ -191,6 +209,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument('--trials', type=int, default=100)
     run_parser.add_argument('--seed', type=int, default=42)
     run_parser.add_argument('--out', default='results')
+    run_parser.add_argument(
+        '--grasp-mode', choices=GRASP_MODES, default='latched',
+        help='latched: lock a piece once the jaws have closed on it (default);'
+             ' friction: hold it by friction alone')
     run_parser.add_argument(
         '--realtime', nargs='?', const=True, default=False,
         type=lambda value: value.lower() == 'true',

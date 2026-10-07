@@ -1,106 +1,209 @@
-"""Piece poses, scene reset and suction, through the Gazebo bridge."""
+"""Piece poses, scene reset, the grasp latch and MoveIt's planning scene."""
 
 from functools import partial
 import math
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Collection, Dict, Optional, Sequence, Set, Tuple, Union
 
-from geometry_msgs.msg import Pose
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Pose, PoseStamped
+from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, PlanningScene
+from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import SetEntityPose
-from std_msgs.msg import Empty
-from std_msgs.msg import String
+from shape_msgs.msg import SolidPrimitive
+from std_msgs.msg import Empty, String
 
 from . import layout
 from .ros_util import spin_for, spin_until
+from .tasks import PiecePose
 
 # One pose topic per piece, bridged from each piece's PosePublisher.
 POSE_TOPIC = '/lab/pieces/{name}/pose'
+LATCH_TOPIC = '/lab/latch/{name}/{verb}'
 SET_POSE_SERVICE = '/world/table_world/set_pose'
 SETTLE_SPEED = 0.001    # m/s: below this a piece counts as at rest
 SETTLE_SAMPLE_S = 0.1
-SUCTION_ACK_S = 2.0     # simulation seconds to wait for a suction state change
-GRIP_SETTLE_S = 0.2     # let an attached piece settle into the grip
+LATCH_ACK_S = 2.0       # simulation seconds to wait for a latch state change
 RESET_ATTEMPTS = 5      # teleports per reset while a piece is still moving
 RESET_SETTLE_S = 1.0    # wait per attempt for the pieces to come to rest
 
-XYZ = Tuple[float, float, float]
+# Planning scene. The arm's base box sits on the table top, so MoveIt's table
+# is 5 mm lower than the real one to keep the base out of collision with it.
+FRAME = 'world'
+TABLE_SIZE = (1.0, 1.0, 0.05)
+TABLE_TOP_FOR_PLANNING = layout.TABLE_TOP - 0.005
+HELD_LINK = 'gripper_link'
+TOUCH_LINKS = ['gripper_link', 'moving_jaw_so101_v1_link']
+
+
+def pose_from_quaternion(position, q) -> PiecePose:
+    """Return a PiecePose from a position and an orientation quaternion."""
+    yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+    # Tilt: angle between the piece's z axis and the world's.
+    up_z = 1 - 2 * (q.x * q.x + q.y * q.y)
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, up_z))))
+    return PiecePose(position.x, position.y, position.z, yaw, tilt)
+
+
+def piece_primitive(name: str) -> SolidPrimitive:
+    """Return the collision shape of a piece."""
+    piece = layout.PIECES[name]
+    if piece.shape == 'cylinder':
+        return SolidPrimitive(type=SolidPrimitive.CYLINDER,
+                              dimensions=[2 * piece.half_height, piece.half_x])
+    return SolidPrimitive(type=SolidPrimitive.BOX,
+                          dimensions=[2 * piece.half_x, 2 * piece.half_y, 2 * piece.half_height])
+
+
+Names = Union[None, str, Collection[str]]
+
+
+def _names(value: Names) -> Collection[str]:
+    if value is None:
+        return ()
+    return (value,) if isinstance(value, str) else value
+
+
+def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
+                   held: Optional[str] = None, previously_held: Optional[str] = None,
+                   in_world: Collection[str] = ()) -> PlanningScene:
+    """
+    Return a planning-scene diff: the table, the pieces, and a held piece.
+
+    exclude leaves pieces out (one the open jaws are around, or all of them
+    while the scene is being reset); held attaches a piece to the gripper so
+    planning carries it along. in_world lists the pieces the scene already
+    holds as world objects; only those are removed. MoveIt puts a detached
+    object back into the world, so a piece being released counts as present.
+    """
+    exclude = _names(exclude)
+    in_world = set(in_world)
+    scene = PlanningScene(is_diff=True)
+    scene.robot_state.is_diff = True
+    table = CollisionObject(id='table', operation=CollisionObject.ADD)
+    table.header.frame_id = FRAME
+    table.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=list(TABLE_SIZE))]
+    table_pose = Pose()
+    table_pose.position.z = TABLE_TOP_FOR_PLANNING - TABLE_SIZE[2] / 2
+    table_pose.orientation.w = 1.0
+    table.primitive_poses = [table_pose]
+    scene.world.collision_objects.append(table)
+    if previously_held is not None and previously_held != held:
+        released = AttachedCollisionObject(link_name=HELD_LINK)
+        released.object.id = previously_held
+        released.object.operation = CollisionObject.REMOVE
+        scene.robot_state.attached_collision_objects.append(released)
+        in_world.add(previously_held)
+    for name in sorted(poses):
+        obj = CollisionObject(id=name)
+        obj.header.frame_id = FRAME
+        if name in exclude:
+            if name in in_world:
+                obj.operation = CollisionObject.REMOVE
+                scene.world.collision_objects.append(obj)
+            continue
+        obj.operation = CollisionObject.ADD
+        obj.primitives = [piece_primitive(name)]
+        obj.primitive_poses = [poses[name]]
+        if name == held:
+            scene.robot_state.attached_collision_objects.append(AttachedCollisionObject(
+                link_name=HELD_LINK, object=obj, touch_links=TOUCH_LINKS))
+        else:
+            scene.world.collision_objects.append(obj)
+    return scene
 
 
 class Scene:
-    """Read piece poses, reset the layout, and engage or release suction."""
+    """Read piece poses, reset the layout, latch pieces, sync MoveIt's scene."""
 
     def __init__(self, node: Node):
         self._node = node
-        self._poses: Dict[str, XYZ] = {}
+        self._poses: Dict[str, Pose] = {}
         for name in layout.PIECES:
             node.create_subscription(PoseStamped, POSE_TOPIC.format(name=name),
                                      partial(self._on_pose, name), qos_profile_sensor_data)
         self._set_pose = node.create_client(SetEntityPose, SET_POSE_SERVICE)
-        self._attach = {n: node.create_publisher(Empty, f'/simple_arm/suction/{n}/attach', 10)
-                        for n in layout.PIECES}
-        self._detach = {n: node.create_publisher(Empty, f'/simple_arm/suction/{n}/detach', 10)
-                        for n in layout.PIECES}
-        # Last state each suction plugin reported; None until it reports.
-        self._suction: Dict[str, Optional[str]] = {n: None for n in layout.PIECES}
+        self._apply_scene = node.create_client(ApplyPlanningScene, '/apply_planning_scene')
+        self._held: Optional[str] = None
+        self._in_world: Set[str] = set()   # pieces MoveIt has as world objects
+        self._attach = {n: node.create_publisher(
+            Empty, LATCH_TOPIC.format(name=n, verb='attach'), 10) for n in layout.PIECES}
+        self._detach = {n: node.create_publisher(
+            Empty, LATCH_TOPIC.format(name=n, verb='detach'), 10) for n in layout.PIECES}
+        # Last state each latch reported since our last command; None until then.
+        self._latch: Dict[str, Optional[str]] = {n: None for n in layout.PIECES}
+        # Pieces this node has latched and not yet released.
+        self._latched: Set[str] = set()
         for name in layout.PIECES:
-            node.create_subscription(String, f'/simple_arm/suction/{name}/state',
-                                     partial(self._on_suction, name), 10)
+            node.create_subscription(String, LATCH_TOPIC.format(name=name, verb='state'),
+                                     partial(self._on_latch, name), 10)
 
     def _on_pose(self, name: str, msg: PoseStamped) -> None:
-        p = msg.pose.position
-        self._poses[name] = (p.x, p.y, p.z)
+        self._poses[name] = msg.pose
 
-    def _on_suction(self, name: str, msg: String) -> None:
-        self._suction[name] = msg.data
-
-    def _set_suction(self, names: Sequence[str], state: str) -> bool:
-        """
-        Command suction on names and wait until each confirms state.
-
-        A command is not assumed to have taken effect after a fixed delay: with
-        the simulation running faster than real time, a late message would
-        engage suction after the arm has already moved on.
-        """
-        topics = self._attach if state == 'attached' else self._detach
-        pending = [n for n in names if self._suction[n] != state]
-        for name in pending:
-            topics[name].publish(Empty())
-        return spin_until(self._node, lambda: all(self._suction[n] == state for n in pending),
-                          sim_timeout_s=SUCTION_ACK_S)
+    def _on_latch(self, name: str, msg: String) -> None:
+        self._latch[name] = msg.data
 
     def has_poses(self) -> bool:
         """Return True once every piece's pose has been received."""
         return all(name in self._poses for name in layout.PIECES)
 
-    def pose(self, name: str) -> Optional[XYZ]:
-        """Return the latest world position of a piece's centre."""
-        return self._poses.get(name)
+    def pose(self, name: str) -> Optional[PiecePose]:
+        """Return the latest pose of a piece's centre."""
+        pose = self._poses.get(name)
+        return None if pose is None else pose_from_quaternion(pose.position, pose.orientation)
 
-    def grasp_gap(self, name: str, tip_xyz: Sequence[float]) -> float:
-        """Return the measured gap between the tip sphere and the top of a piece."""
-        return layout.grasp_gap(layout.PIECES[name], self._poses[name], tip_xyz)
+    def _command_latch(self, names: Sequence[str], state: str,
+                       confirm: Collection[str]) -> bool:
+        """
+        Command the latch on names; wait until those in confirm report state.
 
-    def attach(self, name: str, tip_xyz: Sequence[float]) -> bool:
-        """Engage suction on a piece if the tip is within GRASP_GAP_MAX of it."""
-        if self.grasp_gap(name, tip_xyz) > layout.GRASP_GAP_MAX:
+        A command is not assumed to have taken effect after a fixed delay: with
+        the simulation running faster than real time, a late message would
+        engage the latch after the arm has already moved on. Nor is an old
+        report trusted: the plugins report only changes, and this node may
+        have heard the start-up "attached" but not the release that followed.
+        A plugin already in the commanded state reports nothing, so only
+        changes this node expects are waited for.
+        """
+        topics = self._attach if state == 'attached' else self._detach
+        for name in names:
+            self._latch[name] = None
+            topics[name].publish(Empty())
+        return spin_until(self._node, lambda: all(self._latch[n] == state for n in confirm),
+                          sim_timeout_s=LATCH_ACK_S)
+
+    def latch(self, name: str) -> bool:
+        """Lock a gripped piece to the gripper; True once confirmed."""
+        ok = self._command_latch([name], 'attached', confirm=[name])
+        if ok:
+            self._latched.add(name)
+        return ok
+
+    def unlatch(self, name: str) -> None:
+        """Release the latch on a piece (waiting for it if this node latched it)."""
+        self._command_latch([name], 'detached', confirm=[name] if name in self._latched else [])
+        self._latched.discard(name)
+
+    def unlatch_all(self) -> None:
+        """Release every latch, including any left engaged at start-up."""
+        names = list(layout.PIECES)
+        self._command_latch(names, 'detached', confirm=[n for n in names if n in self._latched])
+        self._latched.clear()
+
+    def update_planning_scene(self, exclude: Names = None, held: Optional[str] = None) -> bool:
+        """Push the current piece poses to MoveIt's planning scene (see planning_scene)."""
+        poses = {name: self._poses.get(name, Pose()) for name in layout.PIECES}
+        request = ApplyPlanningScene.Request(
+            scene=planning_scene(poses, exclude, held, self._held, self._in_world))
+        self._held = held
+        self._in_world = {n for n in poses if n not in _names(exclude) and n != held}
+        if not self._apply_scene.wait_for_service(timeout_sec=10.0):
             return False
-        if not self._set_suction([name], 'attached'):
-            return False
-        # The piece shifts slightly as the joint takes hold; return only once
-        # it has settled, so callers measure the carry offset of the real grip.
-        spin_for(self._node, GRIP_SETTLE_S)
-        return True
-
-    def detach(self, name: str) -> None:
-        """Release suction on a piece and wait for the confirmation."""
-        self._set_suction([name], 'detached')
-
-    def detach_all(self) -> None:
-        """Release suction on every piece and wait for the confirmations."""
-        self._set_suction(list(layout.PIECES), 'detached')
+        future = self._apply_scene.call_async(request)
+        spin_until(self._node, future.done, sim_timeout_s=10.0)
+        return future.done() and future.result() is not None and future.result().success
 
     def _place(self, name: str, x: float, y: float) -> bool:
         request = SetEntityPose.Request()
@@ -134,12 +237,15 @@ class Scene:
 
     def wait_settled(self, timeout_s: float = 3.0) -> bool:
         """Wait until every piece moves slower than SETTLE_SPEED."""
+        def xyz(pose):
+            return (pose.position.x, pose.position.y, pose.position.z)
+
         waited = 0.0
-        previous = dict(self._poses)
+        previous = {n: xyz(p) for n, p in self._poses.items()}
         while waited < timeout_s:
             spin_for(self._node, SETTLE_SAMPLE_S)
             waited += SETTLE_SAMPLE_S
-            current = dict(self._poses)
+            current = {n: xyz(p) for n, p in self._poses.items()}
             if all(math.dist(current[n], previous[n]) <= SETTLE_SPEED * SETTLE_SAMPLE_S
                    for n in layout.PIECES if n in current and n in previous):
                 return True

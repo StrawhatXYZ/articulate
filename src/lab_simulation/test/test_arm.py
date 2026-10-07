@@ -1,8 +1,10 @@
-"""Tests for arm motion: smooth setpoint ramps and position-based settle detection."""
+"""Tests for arm motion requests and position-based settle detection."""
 
 import math
 
-from lab_simulation.arm import interpolate, motion_duration, SettleDetector
+from lab_simulation.arm import HOME, plan_request, PLANNING_FAILURES, SettleDetector
+from lab_simulation.so101_kinematics import ARM_JOINTS
+from moveit_msgs.msg import MoveItErrorCodes
 import pytest
 
 STEP = 0.01  # simulation seconds between joint-state samples
@@ -57,25 +59,36 @@ def test_start_offset_is_respected():
     assert result == pytest.approx(10.3)
 
 
-def test_motion_duration_scales_with_the_largest_joint_move():
-    # Cubic ease-in/out peaks at 1.5x the average speed.
-    assert motion_duration((0.0, 0.0, 0.0), (1.0, 0.2, -0.5), max_speed=1.0) == pytest.approx(1.5)
-    assert motion_duration((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), max_speed=1.0) == pytest.approx(0.2)
+def test_plan_request_targets_every_arm_joint_from_the_current_state():
+    goal = (0.1, -0.2, 0.3, 0.4, -0.5)
+    request = plan_request(goal)
+    assert request.group_name == 'arm'
+    assert request.start_state.is_diff
+    [constraints] = request.goal_constraints
+    assert [c.joint_name for c in constraints.joint_constraints] == list(ARM_JOINTS)
+    assert [c.position for c in constraints.joint_constraints] == pytest.approx(goal)
+    assert all(0 < c.tolerance_above <= 0.01 for c in constraints.joint_constraints)
+    assert 0 < request.max_velocity_scaling_factor <= 1
+    # Explicit planner and planning volume (MoveIt warns on every request otherwise).
+    assert request.pipeline_id == 'ompl' and request.planner_id
+    assert request.workspace_parameters.header.frame_id == 'world'
+    assert request.workspace_parameters.min_corner.z <= 0.75 < \
+        request.workspace_parameters.max_corner.z
 
 
-def test_interpolate_starts_and_ends_exactly():
-    start, goal = (0.0, 1.0, -1.0), (1.0, 0.0, 1.0)
-    assert interpolate(start, goal, 0.0, 2.0) == pytest.approx(start)
-    assert interpolate(start, goal, 2.0, 2.0) == pytest.approx(goal)
-    assert interpolate(start, goal, 5.0, 2.0) == pytest.approx(goal)
-    assert interpolate(start, goal, 1.0, 2.0) == pytest.approx((0.5, 0.5, 0.0))
+def test_planning_failures_exclude_execution_failures():
+    assert MoveItErrorCodes.PLANNING_FAILED in PLANNING_FAILURES
+    assert MoveItErrorCodes.GOAL_IN_COLLISION in PLANNING_FAILURES
+    for code in (MoveItErrorCodes.SUCCESS, MoveItErrorCodes.CONTROL_FAILED,
+                 MoveItErrorCodes.TIMED_OUT, MoveItErrorCodes.PREEMPTED):
+        assert code not in PLANNING_FAILURES
 
 
-def test_interpolate_eases_in_and_out_monotonically():
-    start, goal, duration, dt = (0.0,), (1.0,), 1.0, 0.001
-    path = [interpolate(start, goal, i * dt, duration)[0] for i in range(1001)]
-    assert all(b >= a for a, b in zip(path, path[1:]))
-    assert (path[1] - path[0]) / dt < 0.01      # starts from rest
-    assert (path[-1] - path[-2]) / dt < 0.01    # arrives at rest
-    peak = max((b - a) / dt for a, b in zip(path, path[1:]))
-    assert peak == pytest.approx(1.5, rel=0.01)
+def test_home_matches_the_srdf():
+    import xml.etree.ElementTree as ET
+    from ament_index_python.packages import get_package_share_directory
+    srdf = ET.parse(get_package_share_directory('so101_moveit_config')
+                    + '/config/so101.srdf').getroot()
+    state = {j.get('name'): float(j.get('value'))
+             for j in srdf.find("group_state[@name='home']").findall('joint')}
+    assert tuple(state[name] for name in ARM_JOINTS) == pytest.approx(HOME)

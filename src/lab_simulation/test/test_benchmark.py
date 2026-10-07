@@ -5,6 +5,7 @@ import json
 
 from lab_simulation import benchmark
 from lab_simulation.tasks import SimulationUnresponsive, TrialResult
+import pytest
 
 
 class CountingTask:
@@ -94,3 +95,11 @@ def test_run_is_uncapped_by_default_and_realtime_on_request():
     assert parser.parse_args(['run']).realtime is False
     assert parser.parse_args(['run', '--realtime']).realtime is True
     assert parser.parse_args(['run', '--realtime', 'false']).realtime is False
+
+
+def test_grasp_mode_defaults_to_latched_and_is_validated(capsys):
+    parser = benchmark.build_parser()
+    assert parser.parse_args(['run']).grasp_mode == 'latched'
+    assert parser.parse_args(['run', '--grasp-mode', 'friction']).grasp_mode == 'friction'
+    with pytest.raises(SystemExit):
+        parser.parse_args(['run', '--grasp-mode', 'suction'])

@@ -96,3 +96,10 @@ def test_every_joint_has_planning_limits_no_faster_than_the_urdf():
 
 def test_kinematics_plugin_for_the_arm():
     assert load('kinematics.yaml')['arm']['kinematics_solver'] == 'pick_ik/PickIkPlugin'
+
+
+def test_arm_group_has_an_ompl_planner_configuration():
+    """The lab requests RRTConnect for the arm (lab_simulation.arm.PLANNER)."""
+    ompl = load('ompl_planning.yaml')
+    assert ompl['arm']['default_planner_config'] == 'RRTConnect'
+    assert 'RRTConnect' in ompl['arm']['planner_configs']
