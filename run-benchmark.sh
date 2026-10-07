@@ -37,7 +37,11 @@ docker exec \
     "${CONTAINER}" bash -c '
 source /opt/ros/jazzy/setup.bash
 cd /workspace
-colcon build --symlink-install > /dev/null
+if ! colcon build --symlink-install > /tmp/lab-build.log 2>&1; then
+    tail -n 30 /tmp/lab-build.log
+    echo "Workspace build failed; not running the benchmark." >&2
+    exit 1
+fi
 source install/setup.bash
 ros2 launch lab_simulation benchmark.launch.py \
     task:="${TASK}" trials:="${TRIALS}" seed:="${SEED}" grasp_mode:="${GRASP_MODE}" \
