@@ -199,6 +199,12 @@ def test_pieces_start_inside_the_workspace():
 
 
 @pytest.mark.parametrize('name', sorted(layout.PIECES))
+def test_piece_colour_matches_the_world(name):
+    diffuse = WORLD_MODELS[name].find('link/visual/material/diffuse').text
+    assert floats(diffuse)[:3] == pytest.approx(layout.PIECES[name].colour)
+
+
+@pytest.mark.parametrize('name', sorted(layout.PIECES))
 def test_markers_match_pieces(name):
     piece = layout.PIECES[name]
     _, sx, sy, sz, *_ = SHAPES[name]

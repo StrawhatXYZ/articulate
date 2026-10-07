@@ -39,6 +39,7 @@ class Piece(NamedTuple):
     half_y: float           # box half width, or cylinder radius
     half_height: float
     mass: float
+    colour: Tuple[float, float, float]   # RGB, as in the world file
 
     @property
     def centre_z(self) -> float:
@@ -72,9 +73,9 @@ class Piece(NamedTuple):
 
 PIECES: Dict[str, Piece] = {
     piece.name: piece for piece in (
-        Piece('red_cube', 'box', 0.015, 0.015, 0.015, 0.030),
-        Piece('blue_cylinder', 'cylinder', 0.015, 0.015, 0.025, 0.035),
-        Piece('green_block', 'box', 0.025, 0.015, 0.015, 0.045),
+        Piece('red_cube', 'box', 0.015, 0.015, 0.015, 0.030, (0.8, 0.1, 0.1)),
+        Piece('blue_cylinder', 'cylinder', 0.015, 0.015, 0.025, 0.035, (0.1, 0.1, 0.8)),
+        Piece('green_block', 'box', 0.025, 0.015, 0.015, 0.045, (0.1, 0.7, 0.2)),
     )
 }
 

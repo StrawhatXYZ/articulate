@@ -16,11 +16,11 @@ from .scene import POSE_TOPIC
 
 TOPIC = '/lab/piece_markers'
 
-# (marker type, scale x, y, z, colour r, g, b) mirroring table_world.sdf.
+# (marker type, scale x, y, z, colour r, g, b), from layout.PIECES.
 SHAPES = {
-    'red_cube': (Marker.CUBE, 0.03, 0.03, 0.03, 0.8, 0.1, 0.1),
-    'blue_cylinder': (Marker.CYLINDER, 0.03, 0.03, 0.05, 0.1, 0.1, 0.8),
-    'green_block': (Marker.CUBE, 0.05, 0.03, 0.03, 0.1, 0.7, 0.2),
+    name: (Marker.CYLINDER if piece.shape == 'cylinder' else Marker.CUBE,
+           2 * piece.half_x, 2 * piece.half_y, 2 * piece.half_height, *piece.colour)
+    for name, piece in layout.PIECES.items()
 }
 
 

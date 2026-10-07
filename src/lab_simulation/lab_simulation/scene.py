@@ -5,14 +5,14 @@ import math
 from typing import Collection, Dict, Optional, Sequence, Set, Tuple, Union
 
 from geometry_msgs.msg import Pose, PoseStamped
-from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, PlanningScene
+from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, ObjectColor, PlanningScene
 from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import SetEntityPose
 from shape_msgs.msg import SolidPrimitive
-from std_msgs.msg import Empty, String
+from std_msgs.msg import ColorRGBA, Empty, String
 
 from . import layout
 from .ros_util import spin_for, spin_until
@@ -104,6 +104,10 @@ def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
                 scene.world.collision_objects.append(obj)
             continue
         obj.operation = CollisionObject.ADD
+        # Without its own colour, RViz draws a held piece in MoveIt's
+        # attached-object violet.
+        r, g, b = layout.PIECES[name].colour
+        scene.object_colors.append(ObjectColor(id=name, color=ColorRGBA(r=r, g=g, b=b, a=1.0)))
         obj.primitives = [piece_primitive(name)]
         obj.primitive_poses = [poses[name]]
         if name == held:

@@ -92,3 +92,11 @@ def test_releasing_and_excluding_a_piece_removes_it_from_the_world():
     [released] = scene.robot_state.attached_collision_objects
     assert released.object.operation == CollisionObject.REMOVE
     assert world_ids(scene, CollisionObject.REMOVE) == {'green_block'}
+
+
+def test_pieces_keep_their_colour_in_moveit():
+    """A held piece is drawn in MoveIt's violet unless it has its own colour."""
+    scene = planning_scene(poses(), held='red_cube')
+    colours = {c.id: (c.color.r, c.color.g, c.color.b, c.color.a) for c in scene.object_colors}
+    for name, piece in layout.PIECES.items():
+        assert colours[name] == pytest.approx((*piece.colour, 1.0))
