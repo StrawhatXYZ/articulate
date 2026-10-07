@@ -50,8 +50,10 @@ LATCH_EASE_RAD = 0.05
 LATCH_SETTLE_S = 0.3
 # Inside a bin the jaws open only this far to let go: fully open (0.6 rad)
 # the moving jaw reaches 48 mm from the grasp point, past the 45 mm to a wall.
-# At 0.45 rad it clears the piece by ~1 cm, enough for RELEASE_CLEARANCE_M.
-BIN_RELEASE_RAD = 0.45
+# At 0.5 rad it reaches 41 mm and clears the piece by ~11 mm; the slide off
+# the piece is shortened to match, so the jaw does not brush it over.
+BIN_RELEASE_RAD = 0.5
+BIN_RELEASE_CLEARANCE_M = 0.005
 # After release, slide the jaws this far along the closing axis, moving the
 # fixed jaw off the piece, before lifting: the gripped piece was pressed
 # against the fixed jaw (grasp frame +x), and lifting straight up would drag
@@ -332,7 +334,8 @@ class PickPlaceTask:
         self._scene.update_planning_scene(exclude=piece.name)
         q_now = self._arm.joint_positions()
         tcp = self._kin.forward(q_now)
-        clear = tcp[:3, 3] + RELEASE_CLEARANCE_M * tcp[:3, 0]
+        slide = BIN_RELEASE_CLEARANCE_M if aim_jaws else RELEASE_CLEARANCE_M
+        clear = tcp[:3, 3] + slide * tcp[:3, 0]
         release_yaw = self._kin.grasp_yaw(q_now)
         try:
             q_clear = self._kin.inverse(clear, release_yaw, q_now)
