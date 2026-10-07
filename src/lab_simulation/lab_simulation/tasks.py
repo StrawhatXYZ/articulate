@@ -382,8 +382,9 @@ class SortTask:
                 piece_failure = self._pick._execute(
                     layout.PIECES[name], start[name], bin_.xy, details, aim_jaws=True)
             finally:
+                # A failed pick may have stopped inside the bin: open partly.
                 self._scene.unlatch(name)
-                self._gripper.release()
+                self._gripper.release(BIN_RELEASE_RAD)
                 self._scene.update_planning_scene()
             details['failure'] = piece_failure
             pieces[name] = details

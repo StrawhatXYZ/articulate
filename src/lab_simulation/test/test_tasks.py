@@ -294,7 +294,9 @@ def test_sort_opens_the_jaws_only_partly_inside_a_bin(world, monkeypatch):
     real = world.release
     monkeypatch.setattr(world, 'release', lambda angle=OPEN: angles.append(angle) or real(angle))
     assert sort_task(world).run(random.Random(0), 0).success
-    assert angles.count(BIN_RELEASE_RAD) == len(layout.PIECES)
+    # Per piece: fully open to approach it on the table, partly to let go in
+    # the bin, and partly again afterwards in case the pick failed in a bin.
+    assert angles == [OPEN, BIN_RELEASE_RAD, BIN_RELEASE_RAD] * len(layout.PIECES)
     assert BIN_RELEASE_RAD < OPEN
 
 

@@ -133,7 +133,7 @@ def run(args) -> int:
     from .ros_util import sim_now, spin_until
     from .scene import Scene
     from .so101_kinematics import Kinematics
-    from .tasks import PickPlaceTask, ReachTask, SortTask
+    from .tasks import BIN_RELEASE_RAD, PickPlaceTask, ReachTask, SortTask
 
     rclpy.init()
     node = rclpy.create_node(
@@ -168,10 +168,12 @@ def run(args) -> int:
     tasks = list(all_tasks.values()) if args.task == 'all' else [all_tasks[args.task]]
 
     def reset(rng: random.Random) -> bool:
-        # Let go of everything, go home past no pieces, then lay out the scene.
+        # Let go of everything and go home. A failed trial can leave the jaws
+        # inside a bin, so open them only partly and plan home ignoring the
+        # pieces and bins; then lay out the scene.
         scene.unlatch_all()
-        gripper.release()
-        scene.update_planning_scene(exclude=list(layout.PIECES))
+        gripper.release(BIN_RELEASE_RAD)
+        scene.update_planning_scene(exclude=list(layout.PIECES), bins=False)
         home = arm.home()
         if not (home.planned and home.reached):
             return False

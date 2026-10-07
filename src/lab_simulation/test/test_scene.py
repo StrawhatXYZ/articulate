@@ -112,3 +112,11 @@ def test_bins_are_obstacles_with_four_walls():
         centre_y = sum(p.position.y for p in obj.primitive_poses) / 4
         assert (centre_x, centre_y) == pytest.approx(bin_.xy, abs=1e-6)
         assert all(p.position.z > layout.TABLE_TOP for p in obj.primitive_poses)
+
+
+def test_bins_can_be_left_out_so_a_stuck_arm_can_get_home():
+    names = {b.name for b in layout.BINS.values()}
+    first = planning_scene(poses(), bins=False)
+    assert not names & world_ids(first) and not names & world_ids(first, CollisionObject.REMOVE)
+    later = planning_scene(poses(), bins=False, bins_in_world=True)
+    assert world_ids(later, CollisionObject.REMOVE) == names

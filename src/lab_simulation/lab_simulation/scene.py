@@ -84,7 +84,8 @@ def bin_object(bin_: layout.Bin) -> CollisionObject:
 
 def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
                    held: Optional[str] = None, previously_held: Optional[str] = None,
-                   in_world: Collection[str] = ()) -> PlanningScene:
+                   in_world: Collection[str] = (), bins: bool = True,
+                   bins_in_world: bool = False) -> PlanningScene:
     """
     Return a planning-scene diff: the table, the pieces, and a held piece.
 
@@ -93,6 +94,8 @@ def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
     planning carries it along. in_world lists the pieces the scene already
     holds as world objects; only those are removed. MoveIt puts a detached
     object back into the world, so a piece being released counts as present.
+    bins=False leaves the sorting bins out (removing them if bins_in_world),
+    so an arm stuck inside a bin can still plan its way home.
     """
     exclude = _names(exclude)
     in_world = set(in_world)
@@ -107,7 +110,11 @@ def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
     table.primitive_poses = [table_pose]
     scene.world.collision_objects.append(table)
     for bin_ in layout.BINS.values():
-        scene.world.collision_objects.append(bin_object(bin_))
+        if bins:
+            scene.world.collision_objects.append(bin_object(bin_))
+        elif bins_in_world:
+            scene.world.collision_objects.append(
+                CollisionObject(id=bin_.name, operation=CollisionObject.REMOVE))
     if previously_held is not None and previously_held != held:
         released = AttachedCollisionObject(link_name=HELD_LINK)
         released.object.id = previously_held
@@ -150,6 +157,7 @@ class Scene:
         self._apply_scene = node.create_client(ApplyPlanningScene, '/apply_planning_scene')
         self._held: Optional[str] = None
         self._in_world: Set[str] = set()   # pieces MoveIt has as world objects
+        self._bins_in_world = False
         self._attach = {n: node.create_publisher(
             Empty, LATCH_TOPIC.format(name=n, verb='attach'), 10) for n in layout.PIECES}
         self._detach = {n: node.create_publisher(
@@ -215,12 +223,15 @@ class Scene:
         self._command_latch(names, 'detached', confirm=[n for n in names if n in self._latched])
         self._latched.clear()
 
-    def update_planning_scene(self, exclude: Names = None, held: Optional[str] = None) -> bool:
+    def update_planning_scene(self, exclude: Names = None, held: Optional[str] = None,
+                              bins: bool = True) -> bool:
         """Push the current piece poses to MoveIt's planning scene (see planning_scene)."""
         poses = {name: self._poses.get(name, Pose()) for name in layout.PIECES}
         request = ApplyPlanningScene.Request(
-            scene=planning_scene(poses, exclude, held, self._held, self._in_world))
+            scene=planning_scene(poses, exclude, held, self._held, self._in_world, bins,
+                                 self._bins_in_world))
         self._held = held
+        self._bins_in_world = bins
         self._in_world = {n for n in poses if n not in _names(exclude) and n != held}
         if not self._apply_scene.wait_for_service(timeout_sec=10.0):
             return False
