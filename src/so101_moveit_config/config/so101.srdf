@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!--
+  Semantic description of the SO-101 for MoveIt.
+
+  Disabled collision pairs: links joined by a joint ("Adjacent"), and pairs
+  whose collision boxes never overlapped in 5000 random joint states
+  ("Never"). Sampled against so101_description's box collision geometry,
+  7 October 2026; re-sample if that geometry changes.
+-->
+<robot name="so101">
+  <group name="arm">
+    <chain base_link="base_link" tip_link="grasp_link"/>
+  </group>
+  <group name="gripper">
+    <joint name="gripper"/>
+  </group>
+
+  <!-- Raised, clear of the table: the benchmark's start pose. -->
+  <group_state name="home" group="arm">
+    <joint name="shoulder_pan" value="0"/>
+    <joint name="shoulder_lift" value="-1.3"/>
+    <joint name="elbow_flex" value="0.6"/>
+    <joint name="wrist_flex" value="1.6"/>
+    <joint name="wrist_roll" value="0"/>
+  </group_state>
+  <group_state name="open" group="gripper">
+    <joint name="gripper" value="0.6"/>
+  </group_state>
+  <group_state name="closed" group="gripper">
+    <joint name="gripper" value="-0.17"/>
+  </group_state>
+
+  <end_effector name="jaws" parent_link="gripper_link" group="gripper" parent_group="arm"/>
+
+  <disable_collisions link1="base_link" link2="shoulder_link" reason="Adjacent"/>
+  <disable_collisions link1="shoulder_link" link2="upper_arm_link" reason="Adjacent"/>
+  <disable_collisions link1="lower_arm_link" link2="upper_arm_link" reason="Adjacent"/>
+  <disable_collisions link1="lower_arm_link" link2="wrist_link" reason="Adjacent"/>
+  <disable_collisions link1="gripper_link" link2="wrist_link" reason="Adjacent"/>
+  <disable_collisions link1="gripper_link" link2="moving_jaw_so101_v1_link" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="upper_arm_link" reason="Never"/>
+  <disable_collisions link1="gripper_link" link2="lower_arm_link" reason="Never"/>
+  <disable_collisions link1="lower_arm_link" link2="moving_jaw_so101_v1_link" reason="Never"/>
+  <disable_collisions link1="moving_jaw_so101_v1_link" link2="wrist_link" reason="Never"/>
+</robot>

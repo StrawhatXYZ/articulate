@@ -1,0 +1,35 @@
+# Planning limits. Velocities are the STS3215 no-load speed (as in the URDF);
+# accelerations are a conservative choice for a hobby servo arm.
+default_velocity_scaling_factor: 0.5
+default_acceleration_scaling_factor: 0.5
+joint_limits:
+  shoulder_pan:
+    has_velocity_limits: true
+    max_velocity: 4.7
+    has_acceleration_limits: true
+    max_acceleration: 8.0
+  shoulder_lift:
+    has_velocity_limits: true
+    max_velocity: 4.7
+    has_acceleration_limits: true
+    max_acceleration: 8.0
+  elbow_flex:
+    has_velocity_limits: true
+    max_velocity: 4.7
+    has_acceleration_limits: true
+    max_acceleration: 8.0
+  wrist_flex:
+    has_velocity_limits: true
+    max_velocity: 4.7
+    has_acceleration_limits: true
+    max_acceleration: 8.0
+  wrist_roll:
+    has_velocity_limits: true
+    max_velocity: 4.7
+    has_acceleration_limits: true
+    max_acceleration: 8.0
+  gripper:
+    has_velocity_limits: true
+    max_velocity: 4.7
+    has_acceleration_limits: true
+    max_acceleration: 8.0
