@@ -37,12 +37,24 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # packages that would otherwise be downloaded again.
 # Then initialise the rosdep database (the base image ships the sources list),
 # and put `gz` on PATH (the Gazebo vendor package installs it outside PATH).
+#
+# Perception models (M3a) run on CPU PyTorch in their own virtual
+# environment, /opt/lab-ai. It sees the system packages (ROS, NumPy), so the
+# perception node runs with that interpreter. Model weights are downloaded
+# on first use into the hf-cache volume, not into the image.
 RUN apt-get update && apt-get install -y \
     ros-jazzy-gz-ros2-control \
     ros-jazzy-pick-ik \
+    python3.12-venv \
     && rm -rf /var/lib/apt/lists/* \
     && rosdep update --rosdistro jazzy \
-    && ln -sf /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz /usr/local/bin/gz
+    && ln -sf /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz /usr/local/bin/gz \
+    && python3 -m venv --system-site-packages /opt/lab-ai \
+    && /opt/lab-ai/bin/pip install --no-cache-dir \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        torch==2.14.1 \
+        transformers==5.19.0 \
+        sentencepiece==0.2.2
 
 COPY --chmod=755 scripts/start-desktop.sh /usr/local/bin/start-desktop.sh
 
@@ -59,5 +71,7 @@ RUN echo "source /opt/ros/jazzy/setup.bash" >> /etc/bash.bashrc \
     && echo "source /workspace/install/setup.bash 2>/dev/null || true" >> /etc/bash.bashrc
 
 ENV DISPLAY=:1
+# Where perception model weights are cached (the hf-cache volume).
+ENV HF_HOME=/root/.cache/huggingface
 
 CMD ["bash"]

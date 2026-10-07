@@ -23,7 +23,12 @@ services:
       - ./src:/workspace/src
       # Benchmark results, readable on the host.
       - ./results:/workspace/results
+      # Downloaded perception model weights, kept across container rebuilds.
+      - hf-cache:/root/.cache/huggingface
     shm_size: "2g"
     stdin_open: true
     tty: true
     command: bash -c "start-desktop.sh && exec sleep infinity"
+
+volumes:
+  hf-cache:
