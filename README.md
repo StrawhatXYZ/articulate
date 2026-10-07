@@ -7,16 +7,19 @@ A containerised ROS 2 simulation lab for building an **instructed grasp**
 system: a robot arm that picks up objects on spoken or written command,
 developed in simulation first.
 
-Phase 1 provides a 3-DOF arm with a simulated suction gripper on a table with
-graspable objects in Gazebo, bridged to ROS 2 and visualised in RViz, plus a
-seeded benchmark that measures reach and pick-and-place performance. Everything runs inside Docker and is
-viewed in a web browser, so no host-side ROS, X server or GPU is required.
+It simulates the **SO-101**, the low-cost open-source arm the lab plans to
+buy, built from its official model. The arm picks pieces up with its own
+two-finger gripper, driven through ros2_control, with every move planned by
+MoveIt. A seeded benchmark measures reach and pick-and-place performance.
+Everything runs inside Docker and is viewed in a web browser, so no host-side
+ROS, X server or GPU is required.
 
 | Component | Version | Role |
 |---|---|---|
 | ROS 2 | Jazzy | Middleware connecting perception, planning and control |
 | Gazebo | Harmonic (gz-sim 8) | Physics simulation of the arm, table and objects |
-| MoveIt 2 | Jazzy | Collision-aware motion planning (installed; integration is the next milestone) |
+| ros2_control | Jazzy | Arm and gripper controllers, running inside Gazebo (gz_ros2_control) |
+| MoveIt 2 | Jazzy | Collision-aware motion planning for every move |
 | RViz 2 | Jazzy | 3D visualisation of the robot model and TF |
 
 ## Requirements
@@ -74,13 +77,13 @@ next:
 ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 rviz:=true realtime:=true
 ```
 
-RViz shows the arm picking pieces with its suction tip and placing them on
-random targets, at normal speed; each result is printed in the terminal.
-Ctrl-C stops it early.
+RViz shows the SO-101 gripping pieces with its jaws and placing them on random
+targets, at normal speed; each result is printed in the terminal. Ctrl-C
+stops it early.
 
 To check plain joint motion instead, start the simulation and, in a second
-terminal, run the five-pose joint check (it moves the arm only, it does not
-pick):
+terminal, run the six-pose joint check (it moves the arm and gripper through
+the controllers; it does not plan or pick):
 
 ```bash
 # Terminal 1                                  # Terminal 2
@@ -105,17 +108,30 @@ ros2 launch lab_simulation arm_world.launch.py [argument:=value ...]
 
 | Argument | Default | Description |
 |---|---|---|
-| `rviz` | `true` | Start RViz 2 with the preconfigured arm view |
+| `rviz` | `true` | Start RViz 2 with the arm, the pieces and MoveIt's motion planning panel |
 | `gz_gui` | `false` | Also start the Gazebo GUI. It uses several CPU cores under software rendering, so RViz is the lighter viewer. |
 | `use_sim_time` | `true` | Drive ROS nodes from the Gazebo `/clock` |
 
+### Planning in RViz
+
+In RViz's **MotionPlanning** panel, drag the arm's goal marker (or pick
+*home* under *Goal State*) and press **Plan & Execute**; the arm moves in
+Gazebo. The SO-101 has five arm joints, so not every gripper orientation
+exists for a given point; the marker snaps to the nearest one the arm can
+reach. Interactive planning knows the arm but not the table or the pieces
+(the benchmark adds those to MoveIt's planning scene itself), so keep goals
+above the table.
+
 ### Commanding joints directly
 
-Each joint accepts a position target in radians. Targets are latched, so a
-single message is enough to move and hold a joint:
+The arm takes trajectories, the gripper a position (radians; 0.6 is open,
+-0.17 fully closed):
 
 ```bash
-ros2 topic pub --once /simple_arm/joint_2/cmd_pos std_msgs/msg/Float64 "{data: 0.5}"
+ros2 action send_goal /arm_controller/follow_joint_trajectory control_msgs/action/FollowJointTrajectory \
+  "{trajectory: {joint_names: [shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll],
+    points: [{positions: [0.5, -1.3, 0.6, 1.6, 0.0], time_from_start: {sec: 2}}]}}"
+ros2 topic pub --once /gripper_controller/commands std_msgs/msg/Float64MultiArray "{data: [0.0]}"
 ros2 topic echo /joint_states
 ```
 
@@ -139,28 +155,28 @@ colcon test --packages-select lab_simulation
 colcon test-result --verbose
 ```
 
+Use `colcon test` without `--packages-select` to test all three packages.
 The suite runs the ROS 2 linters (flake8, pep257, xmllint, lint_cmake) and
-the pytest files in `test/`: unit tests for the kinematics, layout sampling,
-metrics, tasks, arm motion and benchmark runner, and
-`test/test_robot_description.py`, which checks that:
+the pytest files in each package's `test/`:
 
-- the URDF and SDF agree on every link and joint (geometry, inertia, origins,
-  axes, limits, dynamics);
-- each inertia tensor matches its link's geometry and mass;
-- the arm's placement in the world matches the URDF;
-- every joint controller topic is bridged and its output is clamped to the
-  joint's effort limit;
-- the demo sequence stays within the URDF joint limits;
-- every piece publishes its pose, and its suction joint and topics are wired
-  through the bridge.
+- `so101_description`: the generated model matches the upstream SO-101 URDF
+  in every joint origin, axis, limit and inertial, and the generator's output
+  is what is committed;
+- `so101_moveit_config`: groups, named states and collision exclusions refer
+  to real links and joints, and the controllers match ros2_control;
+- `lab_simulation`: kinematics against the URDF, the workspace map against the
+  IK, layout sampling, the planning-scene diffs, metrics, the benchmark
+  runner, and the tasks against a fake robot (grasp gate, latch, drops,
+  planning failures). `test_robot_description.py` ties the description to the
+  controllers, the world's pieces, the bridge, the markers and `move_arm.py`.
 
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and on every pull
 request:
 
-- **Build and test** builds the package and runs the full test suite in the
-  official `ros:jazzy` image.
+- **Build and test** builds the three packages and runs the full test suite
+  in the official `ros:jazzy` image.
 - **Lint** runs ShellCheck on the shell scripts and Hadolint on the
   Dockerfile. Rules ignored on purpose are listed, with reasons, in
   `.hadolint.yaml`.
@@ -177,48 +193,56 @@ compose file, the scripts or the package change.
 `report.md`.
 
 ```bash
-./run-benchmark.sh                              # both tasks, 100 trials each, seed 42
-TASK=pick_place TRIALS=10 ./run-benchmark.sh    # quick check
+./run-benchmark.sh                                  # both tasks, 100 trials each, seed 42
+TASK=pick_place TRIALS=10 ./run-benchmark.sh        # quick check
+TASK=pick_place GRASP_MODE=friction ./run-benchmark.sh   # without the grasp latch
 ```
 
 | Task | What happens | Success means |
 |---|---|---|
-| `reach` | The tip moves to a random reachable point | Tip within 1 cm |
-| `pick_place` | Suction pick of a random piece, placed at a random target | Grasped within 5 mm, held within 1 cm of the rigid-grip position while carried, placed upright within 2 cm |
+| `reach` | The gripper, pointing down, moves to a random point 3–8 cm above the table, clear of the pieces | Grasp point within 1 cm |
+| `pick_place` | The jaws close on a random piece; MoveIt carries it to a random target | Jaws closed on the piece, held within 1 cm of its grip while carried, placed within 2 cm of the target, upright (tilt under 15°) on the table |
 
-Failures are classified as `unreachable`, `grasp_miss`, `dropped`,
-`placement_error` or `timeout`. Success rates carry 95% Wilson intervals.
-Robot timings are in simulation seconds; trials per minute and real-time
-factor are wall-clock. The benchmark lifts Gazebo's real-time cap unless
-`realtime:=true`.
+Failures are classified as `unreachable`, `planning_failed`, `grasp_miss`,
+`dropped`, `placement_error` or `timeout`. Success rates carry 95% Wilson
+intervals. Robot timings are in simulation seconds; trials per minute and
+real-time factor are wall-clock. The benchmark lifts Gazebo's real-time cap
+unless `realtime:=true`.
 
-### Step 1 baseline
+### Step 2 baseline (SO-101)
 
-Seed 42, 100 trials per task, commit `3538fa7`
-([`benchmarks/baseline/`](benchmarks/baseline/)):
+Seed 42, 100 trials per task, commit `6526dbd`, native arm64
+([`benchmarks/step2/`](benchmarks/step2/), with the full comparison):
 
-| | Native arm64 (Apple Silicon) | Emulated amd64 (previous image) |
-|---|---|---|
-| Reach success | 100% (95% CI 96–100%) | 100% (96–100%) |
-| Reach tip error, mean | 2.4 mm | 2.2 mm |
-| Pick-and-place success | 84% (76–90%) | 83% (74–89%) |
-| Pick-and-place failures | placement error 15, dropped 1 | placement error 16, dropped 1 |
-| Pick-and-place cycle time, mean of successes | 15.6 s | 15.6 s |
-| Real-time factor | 4.4× | 3.5× |
-| Trials per minute | 22.2 | 17.4 |
+| | Step 1: 3-DOF arm, suction | Step 2: SO-101, jaws + latch | Step 2: SO-101, friction only |
+|---|---|---|---|
+| Reach success | 100% (95% CI 96–100%) | 100% (96–100%) | – |
+| Reach error, mean | 2.4 mm | 0.4 mm | – |
+| Reach time, mean | 3.5 s | 1.3 s | – |
+| Pick-and-place success | 84% (76–90%) | **100% (96–100%)** | 64% (54–73%) |
+| Placement error, mean | 10.5 mm | 5.6 mm | 6.7 mm |
+| Pick-and-place cycle, mean | 15.6 s | 12.1 s | 11.8 s |
+| Trials per minute | 22.2 | 26.6 | – |
 
-Results are the same on both images; the native image runs the benchmark
-**1.3× faster**. On the native run, 12 of the 15 placement errors landed just
-outside the 2 cm limit (2.1–3.0 cm) and 3 were the tall cylinder toppling: the
-3-DOF arm has no wrist, so a held piece tilts with the forearm and arrives
-tilted. Success by piece: green block 32/33, red cube 27/30, blue cylinder
-25/37. These are the numbers later steps (SO-101 arm, ros2_control, MoveIt)
-are measured against.
+On the robot the lab would buy, picking with its own jaws and MoveIt planning
+every move, pick-and-place success went from 84% to 100% (a significant
+difference), cycles are 22% shorter and placements twice as accurate. The
+wrist fixed step 1's main failure: pieces now arrive level instead of tilted.
+
+Read the latched column with the latch in mind (see
+[Grasping, and the grasp latch](#grasping-and-the-grasp-latch)): every grasp
+was a real jaw closure, but Gazebo's friction alone holds only 64% of pieces
+to the end of the carry, and only 5 of 31 cylinders. How well the real
+gripper holds is something only hardware can measure.
+
+The step 1 baseline (3-DOF arm, native and emulated images) stays in
+[`benchmarks/baseline/`](benchmarks/baseline/); step 1 itself can be checked
+out as tag `v0.2.0`.
 
 Compare two runs. Success rates are tested for significance (overlapping 95%
 intervals read "not significant"); other rows have no test and read
-"not tested". Runs with different seeds, trial counts or task sets are
-flagged.
+"not tested". Runs with different robots, grasp modes, seeds, trial counts or
+task sets are flagged.
 
 ```bash
 docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros2 run lab_simulation benchmark.py compare /workspace/results/A /workspace/results/B'
@@ -227,68 +251,87 @@ docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros
 ## Architecture
 
 ```
-                      Gazebo (gz sim)                              ROS 2
- ┌─────────────────────────────────────────┐          ┌──────────────────────────────┐
- │ table_world.sdf                         │          │                              │
- │  └─ simple_arm.sdf                      │          │  move_arm.py ──┐             │
- │      ├─ JointPositionController ×3 ◄────┼─ bridge ─┼── /simple_arm/joint_N/cmd_pos│
- │      └─ JointStatePublisher (50 Hz) ────┼─ bridge ─┼─► /joint_states ──┐          │
- │  clock ─────────────────────────────────┼─ bridge ─┼─► /clock          ▼          │
- └─────────────────────────────────────────┘          │      robot_state_publisher   │
-                                                      │      (simple_arm.urdf)       │
-                                                      │               │ /tf          │
-                                                      │               ▼              │
-                                                      │             RViz 2           │
-                                                      └──────────────────────────────┘
+            Gazebo (gz sim)                                    ROS 2
+ ┌─────────────────────────────────────┐      ┌────────────────────────────────────────┐
+ │ table_world.sdf: table, 3 pieces    │      │ robot_state_publisher                  │
+ │                                     │      │   (lab_so101.urdf.xacro) ─► /tf        │
+ │ SO-101, spawned from                │      │        │ robot_description            │
+ │ robot_description                   │      │        ▼                               │
+ │  ├─ gz_ros2_control ◄───────────────┼──────┼─ arm_controller ◄── move_group ◄──┐   │
+ │  │   arm + gripper joints           │      │   gripper_controller (MoveIt)     │   │
+ │  │   ──► joint_state_broadcaster ───┼──────┼─► /joint_states                   │   │
+ │  └─ grasp latch (DetachableJoint) ◄─┼bridge┼── /lab/latch/<piece>/*      benchmark │
+ │ piece PosePublishers ───────────────┼bridge┼─► /lab/pieces/<piece>/pose ─► RViz    │
+ │ clock ──────────────────────────────┼bridge┼─► /clock                              │
+ └─────────────────────────────────────┘      └────────────────────────────────────────┘
 ```
 
-### Topics
+One description, `src/lab_simulation/urdf/lab_so101.urdf.xacro`, is spawned
+into Gazebo and read by RViz and MoveIt, so they cannot drift apart.
 
-| Topic | Type | Direction | Purpose |
-|---|---|---|---|
-| `/simple_arm/joint_{1,2,3}/cmd_pos` | `std_msgs/msg/Float64` | ROS → Gazebo | Joint position targets (rad) |
-| `/joint_states` | `sensor_msgs/msg/JointState` | Gazebo → ROS | Joint positions and velocities, 50 Hz |
-| `/clock` | `rosgraph_msgs/msg/Clock` | Gazebo → ROS | Simulation time |
-| `/tf`, `/tf_static` | `tf2_msgs/msg/TFMessage` | ROS | Frames `world` → `base_link` → … → `end_effector` |
-| `/robot_description` | `std_msgs/msg/String` | ROS | URDF, latched |
-| `/lab/pieces/<piece>/pose` | `geometry_msgs/msg/PoseStamped` | Gazebo → ROS | Live world pose of each piece |
-| `/simple_arm/suction/<piece>/{attach,detach}` | `std_msgs/msg/Empty` | ROS → Gazebo | Engage or release suction on a piece |
-| `/simple_arm/suction/<piece>/state` | `std_msgs/msg/String` | Gazebo → ROS | Suction state: `attached` or `detached` |
-| `/lab/piece_markers` | `visualization_msgs/msg/MarkerArray` | ROS | Table and pieces for RViz |
-| `/world/table_world/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | service | Teleport a piece (benchmark resets) |
+### Topics, actions and services
+
+| Name | Type | Purpose |
+|---|---|---|
+| `/joint_states` | `sensor_msgs/msg/JointState` | Arm and gripper joints, from ros2_control |
+| `/arm_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | Arm trajectories (MoveIt executes through it) |
+| `/gripper_controller/commands` | `std_msgs/msg/Float64MultiArray` | Gripper position target (rad) |
+| `/move_action` | `moveit_msgs/action/MoveGroup` | Plan and execute with MoveIt |
+| `/clock` | `rosgraph_msgs/msg/Clock` | Simulation time |
+| `/tf`, `/tf_static` | `tf2_msgs/msg/TFMessage` | Frames `world` → `base_link` → … → `grasp_link` |
+| `/lab/pieces/<piece>/pose` | `geometry_msgs/msg/PoseStamped` | Live world pose of each piece |
+| `/lab/latch/<piece>/{attach,detach}` | `std_msgs/msg/Empty` | Engage or release the grasp latch |
+| `/lab/latch/<piece>/state` | `std_msgs/msg/String` | Latch state: `attached` or `detached` |
+| `/lab/piece_markers` | `visualization_msgs/msg/MarkerArray` | Table and pieces for RViz |
+| `/world/table_world/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | Teleport a piece (benchmark resets) |
 
 The bridge mapping lives in `config/bridge.yaml`.
 
-### The robot model
+### The robot
 
-The arm is described twice, as is usual for Gazebo-based ROS projects:
+The SO-101 model in `src/so101_description` is generated from the official
+URDF ([TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100),
+Apache-2.0) by `tools/generate_xacro.py`. Kinematics, masses, inertias,
+joint limits and visual meshes are the upstream values, and a test fails if
+they drift. The changes are listed in `meshes/SOURCE.md`:
 
-- **`worlds/simple_arm.sdf`** is what Gazebo simulates. It carries the joint
-  position controllers and the joint state publisher. It is included directly
-  in the world file, so its plugins load with the world.
-- **`urdf/simple_arm.urdf`** is what ROS tools read: robot_state_publisher,
-  RViz and, later, MoveIt.
+- **Collision boxes** instead of meshes. Mesh collisions slow the simulation
+  to about real time; boxes run it several times faster. The jaws get box
+  pads, and the moving pad is tilted so that it closes flat on a 3 cm piece.
+- **Servo limits** of the STS3215: 2.94 N·m and 4.7 rad/s, with the upstream
+  MuJoCo model's joint damping and friction.
+- A **`grasp_link`** frame between the open jaws, where task goals put the
+  piece.
+- The lab's orange and graphite colours.
 
-The test suite fails if the two drift apart. The arm itself:
+| Joint | Range (rad) | |
+|---|---|---|
+| `shoulder_pan` | ±1.92 | Base rotation (positive turns clockwise seen from above) |
+| `shoulder_lift` | ±1.75 | |
+| `elbow_flex` | ±1.69 | |
+| `wrist_flex` | ±1.66 | |
+| `wrist_roll` | −2.74 to 2.84 | |
+| `gripper` | −0.17 to 1.75 | One moving jaw; 0.6 is open (~45 mm), −0.17 closed |
 
-| Joint | Type | Axis | Range (rad) | Effort (N·m) | Link driven | Length |
-|---|---|---|---|---|---|---|
-| `joint_1` | revolute | Z (base yaw) | ±π | 20 | `link_1` | 0.25 m |
-| `joint_2` | revolute | Y (shoulder pitch) | ±3π/4 (±135°) | 15 | `link_2` | 0.20 m |
-| `joint_3` | revolute | Y (elbow pitch) | ±3π/4 (±135°) | 10 | `link_3` | 0.15 m |
+The arm stands at the centre of the table (top at z = 0.75 m) facing +x. With
+the gripper pointing straight down it reaches 0.14–0.22 m from the shoulder
+axis at the heights the benchmark uses. The three pieces are sized to its
+jaws: each is 3 cm across the side it is gripped on.
 
-Each link frame sits on the joint that drives it, with geometry offset by half
-the link length, so links stack end to end. `base_link` is welded to the table
-top at z = 0.75 m. The controllers' PID gains are tuned per joint to the load
-each one carries. Inertias are computed from each link's solid primitive.
-The shoulder sits 0.29 m above the table, so reaching the table needs the
-shoulder and elbow to lean past horizontal: hence the ±135° range.
+### Grasping, and the grasp latch
 
-The table holds three flat-topped 100 g pieces (a red cube, a blue cylinder
-and a green block) as grasp targets. Suction is simulated with one Gazebo
-`DetachableJoint` per piece, declared in the world file. It engages only when
-the tip is within 5 mm of a piece's top, and the code waits for the plugin to
-confirm `attached` or `detached`.
+The gripper is a position controller commanded to "closed", so the jaw keeps
+squeezing at the servo's torque limit like the real arm. A grasp counts only
+if the jaw stalls open (something is between the jaws) and the gripped piece
+sits between them; otherwise the trial is a `grasp_miss`.
+
+Gazebo cannot hold a friction grasp for long: with either of its physics
+engines, a squeezed piece creeps out of the jaws within 10–40 simulated
+seconds. So, in the default **latched** mode, once a grasp has been verified a
+Gazebo `DetachableJoint` locks the piece to the gripper until it is placed.
+This is the same idea as the `gazebo_grasp_fix` plugin long used with Gazebo
+Classic. The **friction** mode adds nothing and is benchmarked for the record
+(`GRASP_MODE=friction ./run-benchmark.sh`). Every report states its mode.
 
 ## Project structure
 
@@ -297,47 +340,44 @@ ai-robotics-lab/
 ├── .github/workflows/
 │   ├── ci.yml                 # Build, test, lint and benchmark smoke test
 │   └── docker.yml             # Image build check
-├── Dockerfile                 # ROS 2 Jazzy + Gazebo + MoveIt 2 + virtual desktop
+├── Dockerfile                 # ROS 2 Jazzy + Gazebo + MoveIt 2 + ros2_control + virtual desktop
 ├── docker-compose.yml         # Container definition, ports and volumes
 ├── start-lab.sh               # Build and start everything
 ├── enter-lab.sh               # Interactive shell in the running container
 ├── stop-lab.sh                # Stop and remove the container
 ├── run-benchmark.sh           # Run the benchmark in the container; results in ./results/
 ├── benchmarks/
-│   └── baseline/              # Committed step 1 baseline (native, emulated, comparison)
+│   ├── baseline/              # Step 1 baseline (3-DOF arm, suction)
+│   └── step2/                 # Step 2 baseline (SO-101), and the comparison
+├── docs/superpowers/          # Design specs and implementation plans
 ├── LICENSE                    # Apache License 2.0
 ├── NOTICE                     # Copyright notice
 ├── scripts/
 │   └── start-desktop.sh       # Xvfb + Openbox + x11vnc + noVNC, run in the container
 └── src/
-    └── lab_simulation/        # ROS 2 package (ament_cmake)
-        ├── package.xml
-        ├── CMakeLists.txt
-        ├── config/
-        │   ├── arm.rviz           # RViz display configuration
-        │   └── bridge.yaml        # ros_gz_bridge topic map
-        ├── lab_simulation/        # Python package
-        │   ├── kinematics.py      # Closed-form forward and inverse kinematics
-        │   ├── layout.py          # Piece geometry and seeded sampling
-        │   ├── tasks.py           # Reach and pick-and-place trials
-        │   ├── metrics.py         # Statistics, reports and comparisons
-        │   ├── arm.py             # Smooth joint motion and settle detection
-        │   ├── scene.py           # Piece poses, suction and scene reset
-        │   ├── object_markers.py  # RViz markers for the table and pieces
-        │   └── benchmark.py       # Benchmark command line
-        ├── launch/
-        │   ├── arm_world.launch.py
-        │   └── benchmark.launch.py
-        ├── scripts/
-        │   ├── benchmark.py       # Entry point: run, report, compare
-        │   ├── move_arm.py        # Scripted, self-verifying joint demo
-        │   └── object_markers.py  # Entry point: RViz piece markers
-        ├── test/                  # Unit and consistency tests (pytest)
-        ├── urdf/
-        │   └── simple_arm.urdf    # Robot description for ROS
-        └── worlds/
-            ├── simple_arm.sdf     # Robot model for Gazebo
-            └── table_world.sdf    # Table, objects, arm and lighting
+    ├── so101_description/     # The SO-101 model
+    │   ├── urdf/              # so101_macro.xacro (generated), standalone xacro, upstream URDF
+    │   ├── meshes/            # Upstream meshes, their licence and SOURCE.md
+    │   └── tools/generate_xacro.py
+    ├── so101_moveit_config/   # SRDF, IK, limits, OMPL, controllers, move_group launch
+    └── lab_simulation/        # The lab: world, tasks, benchmark
+        ├── config/            # RViz, ros_gz_bridge, ros2_control
+        ├── lab_simulation/    # Python package
+        │   ├── so101_kinematics.py  # Forward and vertical-approach inverse kinematics
+        │   ├── layout.py      # Pieces, workspace and seeded sampling
+        │   ├── tasks.py       # Reach and pick-and-place trials
+        │   ├── metrics.py     # Statistics, reports and comparisons
+        │   ├── arm.py         # Moves through MoveIt
+        │   ├── gripper.py     # Jaw control and stall detection
+        │   ├── scene.py       # Piece poses, grasp latch, resets, MoveIt planning scene
+        │   ├── description.py # Builds the robot description
+        │   ├── object_markers.py
+        │   └── benchmark.py   # Benchmark command line
+        ├── launch/            # arm_world.launch.py, benchmark.launch.py
+        ├── scripts/           # benchmark.py, move_arm.py, object_markers.py
+        ├── test/
+        ├── urdf/lab_so101.urdf.xacro  # SO-101 on the table + ros2_control + grasp latch
+        └── worlds/table_world.sdf     # Table, pieces and lighting
 ```
 
 ## Environment notes
@@ -354,9 +394,10 @@ published on `127.0.0.1` only and are not reachable from your network. Do not
 change the port bindings to `0.0.0.0` without adding a VNC password.
 
 **Live editing.** `./src` is bind-mounted into the container, and the
-workspace is built with `--symlink-install`. Edits to Python, launch, URDF,
+workspace is built with `--symlink-install`. Edits to Python, launch, xacro,
 SDF and config files apply on the next launch without rebuilding. Run
-`colcon build` after adding new files.
+`colcon build` after adding new files. To change the SO-101 model itself,
+edit `tools/generate_xacro.py` and re-run it.
 
 **ROS networking.** `ROS_DOMAIN_ID=42` keeps this lab's ROS 2 traffic separate
 from other ROS systems on the same network.
@@ -373,34 +414,32 @@ The comment there explains how to update it.
 | <http://localhost:6080> does not load | Run `docker logs ai-robotics-lab`. Restart with `./stop-lab.sh && ./start-lab.sh`. |
 | `move_arm.py` stays on "waiting for /joint_states" | The simulation is not running. Start the launch file in another terminal first. |
 | `move_arm.py` reports a pose "not reached" | The sim may be running slowly. Check the real-time factor with `gz topic -e -t /world/table_world/stats`. |
+| `move_group` prints "No 3D sensor plugin(s) defined for octomap updates" | Expected: the lab has no depth camera yet. |
+| `move_group` prints a stack trace when the launch is stopped | A known MoveIt shutdown crash; it happens after everything has stopped and is harmless. |
 | `run-benchmark.sh` says a simulation is already running | Stop the interactive launch first (Ctrl-C, or `./stop-lab.sh && ./start-lab.sh`): two simulations would share topics. |
 
 ## Status and roadmap
 
-Verified on 5 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
+Verified on 7 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 
 | Capability | Status |
 |---|---|
 | Reproducible container with browser-based desktop | Working |
-| Table world with arm and graspable objects | Working |
-| Arm welded to the table, links stacked end to end | Working |
-| Joint position control over ROS 2 topics | Working, smooth eased motion |
-| Suction pick-and-place, visible in RViz | Working, 84% success at baseline |
-| Seeded benchmark with committed baseline | Working (see `benchmarks/baseline/`) |
-| Gazebo GUI | Working natively |
-| `/joint_states`, TF and RViz model in the `world` frame | Working |
-| Test suite (unit, consistency, linters) | Working, 282 checks passing |
-| MoveIt plans and executes trajectories | Next milestone |
+| SO-101 arm from its official model, in Gazebo and RViz | Working |
+| ros2_control for the arm and gripper inside Gazebo | Working, tracking error ≤ 0.003 rad |
+| MoveIt plans and executes every move around the table and pieces | Working |
+| Two-finger pick-and-place, visible in RViz | Working, 100% at baseline (latched), 64% friction-only |
+| Seeded benchmark with committed baselines | Working (see `benchmarks/`) |
+| Test suite (unit, consistency, linters) | Working, 485 checks passing |
 
 Planned next steps:
 
-1. **ros2_control.** Replace the per-joint Gazebo controllers with
-   `gz_ros2_control` and a `JointTrajectoryController`, the interface MoveIt
-   executes trajectories through.
-2. **MoveIt 2.** Generate the MoveIt configuration (SRDF, kinematics, planning
-   pipeline) and plan collision-aware motions.
-3. **Gripper and camera.** Add a gripper at `end_effector` and an RGB-D camera
-   overlooking the table.
+1. **Camera and perception.** An RGB-D camera over the table; find pieces
+   from images instead of from the simulator's ground truth.
+2. **Instructions.** "Pick up the red cube", typed or spoken, turned into a
+   task by a language model.
+3. **Learned policies.** Record demonstrations and train a LeRobot policy;
+   compare it with the scripted MoveIt pick on this benchmark.
 
 ### The pipeline
 
@@ -414,7 +453,7 @@ safety check → MoveIt plans a path → arm moves in Gazebo → success or safe
 | Weeks | Focus |
 |---|---|
 | 0–2 | ROS 2 basics, shared setup, first simulation |
-| 3–4 | Gazebo arm, MoveIt motion basics |
+| 3–4 | Gazebo arm, MoveIt motion basics (done: SO-101 with ros2_control and MoveIt) |
 | 5–6 | Vision: the camera finds objects |
 | 7–8 | AI: a language model turns instructions into task plans |
 | 9–10 | LeRobot demos, safety gate |

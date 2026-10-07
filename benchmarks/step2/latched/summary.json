@@ -1,0 +1,74 @@
+{
+  "run": {
+    "robot": "so101",
+    "grasp_mode": "latched",
+    "tasks": [
+      "reach",
+      "pick_place"
+    ],
+    "trials_per_task": 100,
+    "seed": 42,
+    "complete": true,
+    "unthrottled": true,
+    "wall_time_s": 451.0010560380033,
+    "sim_time_s": 1662.948,
+    "real_time_factor": 3.687237485891547,
+    "trials_per_minute": 26.607476499985907,
+    "provenance": {
+      "git_commit": "6526dbd3b8c64e85f06b32dbaaac85d3d27f5779",
+      "git_dirty": "false",
+      "arch": "aarch64",
+      "ros_distro": "jazzy",
+      "gazebo": "8.15.0",
+      "date": "2026-10-07T08:28:47+00:00"
+    }
+  },
+  "tasks": {
+    "pick_place": {
+      "trials": 100,
+      "successes": 100,
+      "success_rate": 1.0,
+      "success_ci": [
+        0.9630051925239981,
+        0.9999999999999999
+      ],
+      "cycle_time_s": {
+        "n": 100,
+        "mean": 12.118699999999988,
+        "median": 12.072499999999991,
+        "p95": 13.135099999999989
+      },
+      "error_m": {
+        "n": 100,
+        "mean": 0.0056079072642815,
+        "median": 0.005193034326217493,
+        "p95": 0.012152268578392309
+      },
+      "failures": {},
+      "disturbed": 0
+    },
+    "reach": {
+      "trials": 100,
+      "successes": 100,
+      "success_rate": 1.0,
+      "success_ci": [
+        0.9630051925239981,
+        0.9999999999999999
+      ],
+      "cycle_time_s": {
+        "n": 100,
+        "mean": 1.266739999999995,
+        "median": 1.258999999999972,
+        "p95": 1.4532500000000028
+      },
+      "error_m": {
+        "n": 100,
+        "mean": 0.00041364343196586254,
+        "median": 0.00038800842326532537,
+        "p95": 0.0007307095666174126
+      },
+      "failures": {},
+      "disturbed": 0
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "run": {
+    "robot": "so101",
+    "grasp_mode": "friction",
+    "tasks": [
+      "pick_place"
+    ],
+    "trials_per_task": 100,
+    "seed": 42,
+    "complete": true,
+    "unthrottled": true,
+    "wall_time_s": 327.42281864999677,
+    "sim_time_s": 1189.462,
+    "real_time_factor": 3.6328011740424606,
+    "trials_per_minute": 18.324929290935536,
+    "provenance": {
+      "git_commit": "6526dbd3b8c64e85f06b32dbaaac85d3d27f5779",
+      "git_dirty": "false",
+      "arch": "aarch64",
+      "ros_distro": "jazzy",
+      "gazebo": "8.15.0",
+      "date": "2026-10-07T08:34:42+00:00"
+    }
+  },
+  "tasks": {
+    "pick_place": {
+      "trials": 100,
+      "successes": 64,
+      "success_rate": 0.64,
+      "success_ci": [
+        0.542352199811621,
+        0.7272892540950986
+      ],
+      "cycle_time_s": {
+        "n": 64,
+        "mean": 11.831999999999969,
+        "median": 11.843999999999994,
+        "p95": 12.716849999999969
+      },
+      "error_m": {
+        "n": 64,
+        "mean": 0.006746571414150679,
+        "median": 0.006034939446110369,
+        "p95": 0.013260323698291937
+      },
+      "failures": {
+        "dropped": 36
+      },
+      "disturbed": 7
+    }
+  }
+}
