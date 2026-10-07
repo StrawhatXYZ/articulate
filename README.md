@@ -10,7 +10,9 @@ developed in simulation first.
 It simulates the **SO-101**, the low-cost open-source arm the lab plans to
 buy, built from its official model. The arm picks pieces up with its own
 two-finger gripper, driven through ros2_control, with every move planned by
-MoveIt. A seeded benchmark measures reach and pick-and-place performance.
+MoveIt. Its headline task is colour sorting: putting each piece into the
+box of its own colour. A seeded benchmark measures reach, pick-and-place and
+sorting performance.
 Everything runs inside Docker and is viewed in a web browser, so no host-side
 ROS, X server or GPU is required.
 
@@ -74,12 +76,13 @@ next:
 
 ```bash
 ./enter-lab.sh
-ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 rviz:=true realtime:=true
+ros2 launch lab_simulation benchmark.launch.py task:=sort trials:=3 rviz:=true realtime:=true
 ```
 
-RViz shows the SO-101 gripping pieces with its jaws and placing them on random
-targets, at normal speed; each result is printed in the terminal. Ctrl-C
-stops it early.
+RViz shows the SO-101 sorting the red cube, blue cylinder and green block
+into the box of the same colour, at normal speed; each result is printed in
+the terminal. Ctrl-C stops it early. Use `task:=pick_place` to watch it place
+pieces on random spots instead.
 
 To check plain joint motion instead, start the simulation and, in a second
 terminal, run the six-pose joint check (it moves the arm and gripper through
@@ -141,10 +144,11 @@ RViz shows the table and the pieces at their live positions. To watch the arm
 pick and place pieces at normal speed, run inside the container:
 
 ```bash
-ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 rviz:=true realtime:=true
+ros2 launch lab_simulation benchmark.launch.py task:=sort trials:=3 rviz:=true realtime:=true
 ```
 
-and open <http://localhost:6080>. Without `realtime:=true` the benchmark runs
+and open <http://localhost:6080>. `task:=pick_place` places pieces on random
+spots instead. Without `realtime:=true` the benchmark runs
 several times faster than real time.
 
 ### Running the tests
@@ -193,7 +197,8 @@ compose file, the scripts or the package change.
 `report.md`.
 
 ```bash
-./run-benchmark.sh                                  # both tasks, 100 trials each, seed 42
+./run-benchmark.sh                                  # all three tasks, 100 trials each, seed 42
+TASK=sort TRIALS=10 ./run-benchmark.sh              # colour sorting only
 TASK=pick_place TRIALS=10 ./run-benchmark.sh        # quick check
 TASK=pick_place GRASP_MODE=friction ./run-benchmark.sh   # without the grasp latch
 ```
@@ -202,6 +207,7 @@ TASK=pick_place GRASP_MODE=friction ./run-benchmark.sh   # without the grasp lat
 |---|---|---|
 | `reach` | The gripper, pointing down, moves to a random point 3–8 cm above the table, clear of the pieces | Grasp point within 1 cm |
 | `pick_place` | The jaws close on a random piece; MoveIt carries it to a random target | Jaws closed on the piece, held within 1 cm of its grip while carried, placed within 2 cm of the target, upright (tilt under 15°) on the table |
+| `sort` | Every piece, one after another, is put into the box of its colour | All three pieces end upright inside their own boxes (checked at the end, so a piece knocked out later counts) |
 
 Failures are classified as `unreachable`, `planning_failed`, `grasp_miss`,
 `dropped`, `placement_error` or `timeout`. Success rates carry 95% Wilson
@@ -211,7 +217,7 @@ unless `realtime:=true`.
 
 ### Step 2 baseline (SO-101)
 
-Seed 42, 100 trials per task, commit `6526dbd`, native arm64
+Seed 42, 100 trials per task, native arm64
 ([`benchmarks/step2/`](benchmarks/step2/), with the full comparison):
 
 | | Step 1: 3-DOF arm, suction | Step 2: SO-101, jaws + latch | Step 2: SO-101, friction only |
@@ -219,23 +225,26 @@ Seed 42, 100 trials per task, commit `6526dbd`, native arm64
 | Reach success | 100% (95% CI 96–100%) | 100% (96–100%) | – |
 | Reach error, mean | 2.4 mm | 0.4 mm | – |
 | Reach time, mean | 3.5 s | 1.3 s | – |
-| Pick-and-place success | 84% (76–90%) | **100% (96–100%)** | 64% (54–73%) |
-| Placement error, mean | 10.5 mm | 5.6 mm | 6.7 mm |
-| Pick-and-place cycle, mean | 15.6 s | 12.1 s | 11.8 s |
-| Trials per minute | 22.2 | 26.6 | – |
+| Pick-and-place success | 84% (76–90%) | **98% (93–99%)** | 73% (64–81%) |
+| Placement error, mean | 10.5 mm | 6.6 mm | 6.5 mm |
+| Pick-and-place cycle, mean | 15.6 s | 11.5 s | 11.2 s |
+| Colour sorting success (all 3 pieces) | – | **93% (86–97%)** | – |
+| Colour sorting time, mean | – | 37.6 s | – |
 
 On the robot the lab would buy, picking with its own jaws and MoveIt planning
-every move, pick-and-place success went from 84% to 100% (a significant
-difference), cycles are 22% shorter and placements twice as accurate. The
-wrist fixed step 1's main failure: pieces now arrive level instead of tilted.
+every move, pick-and-place success went from 84% to 98% (a significant
+difference), cycles are 26% shorter and placements more accurate. The wrist
+fixed step 1's main failure: pieces now arrive level instead of tilted.
+Sorting fails mostly when the red cube starts where the arm cannot grip it
+straight down (3 of 7 failures) or the tall cylinder tips over in its box (2).
 
 Read the latched column with the latch in mind (see
 [Grasping, and the grasp latch](#grasping-and-the-grasp-latch)): every grasp
-was a real jaw closure, but Gazebo's friction alone holds only 64% of pieces
-to the end of the carry, and only 5 of 31 cylinders. How well the real
+was a real jaw closure, but Gazebo's friction alone holds only 73% of pieces
+to the end of the carry, and only 10 of 30 cylinders. How well the real
 gripper holds is something only hardware can measure.
 
-Step 2's pieces, layout and reach targets are sized to the SO-101 (reach
+Step 2's pieces, layout (with the sorting boxes) and reach targets are sized to the SO-101 (reach
 targets lie 3–8 cm above the table, step 1's 5–65 cm), so the reach rows
 compare each robot on its own workspace.
 
@@ -320,7 +329,10 @@ they drift. The changes are listed in `meshes/SOURCE.md`:
 The arm stands at the centre of the table (top at z = 0.75 m) facing +x. With
 the gripper pointing straight down it reaches 0.14–0.22 m from the shoulder
 axis at the heights the benchmark uses. The three pieces are sized to its
-jaws: each is 3 cm across the side it is gripped on.
+jaws: each is 3 cm across the side it is gripped on. Three open sorting boxes
+(9 cm inside, 2 cm walls), one per piece colour, stand side by side on the
+arm's left; pieces are laid out on the rest of its reach. Inside a box the
+jaws open only partly to let go, since fully open they would touch the walls.
 
 ### Grasping, and the grasp latch
 
@@ -381,7 +393,7 @@ ai-robotics-lab/
         ├── scripts/           # benchmark.py, move_arm.py, object_markers.py
         ├── test/
         ├── urdf/lab_so101.urdf.xacro  # SO-101 on the table + ros2_control + grasp latch
-        └── worlds/table_world.sdf     # Table, pieces and lighting
+        └── worlds/table_world.sdf     # Table, pieces, sorting boxes and lighting
 ```
 
 ## Environment notes
@@ -432,9 +444,10 @@ Verified on 7 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 | SO-101 arm from its official model, in Gazebo and RViz | Working |
 | ros2_control for the arm and gripper inside Gazebo | Working, tracking error ≤ 0.003 rad |
 | MoveIt plans and executes every move around the table and pieces | Working |
-| Two-finger pick-and-place, visible in RViz | Working, 100% at baseline (latched), 64% friction-only |
+| Two-finger pick-and-place, visible in RViz | Working, 98% at baseline (latched), 73% friction-only |
+| Colour sorting into matching boxes | Working, 93% at baseline |
 | Seeded benchmark with committed baselines | Working (see `benchmarks/`) |
-| Test suite (unit, consistency, linters) | Working, 485 checks passing |
+| Test suite (unit, consistency, linters) | Working, 571 checks passing |
 
 Planned next steps:
 

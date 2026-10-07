@@ -4,47 +4,50 @@
     "grasp_mode": "latched",
     "tasks": [
       "reach",
-      "pick_place"
+      "pick_place",
+      "sort"
     ],
     "trials_per_task": 100,
     "seed": 42,
     "complete": true,
     "unthrottled": true,
-    "wall_time_s": 451.0010560380033,
-    "sim_time_s": 1662.948,
-    "real_time_factor": 3.687237485891547,
-    "trials_per_minute": 26.607476499985907,
+    "wall_time_s": 1707.5714835260005,
+    "sim_time_s": 5670.314,
+    "real_time_factor": 3.320689092494827,
+    "trials_per_minute": 10.54128636701722,
     "provenance": {
-      "git_commit": "6526dbd3b8c64e85f06b32dbaaac85d3d27f5779",
+      "git_commit": "fd3d5e8edef85e3c9fd841149e4e3620d4a87e8f",
       "git_dirty": "false",
       "arch": "aarch64",
       "ros_distro": "jazzy",
       "gazebo": "8.15.0",
-      "date": "2026-10-07T08:28:47+00:00"
+      "date": "2026-10-07T15:31:57+00:00"
     }
   },
   "tasks": {
     "pick_place": {
       "trials": 100,
-      "successes": 100,
-      "success_rate": 1.0,
+      "successes": 98,
+      "success_rate": 0.98,
       "success_ci": [
-        0.9630051925239981,
-        0.9999999999999999
+        0.9299868370580063,
+        0.9944981477650318
       ],
       "cycle_time_s": {
-        "n": 100,
-        "mean": 12.118699999999988,
-        "median": 12.072499999999991,
-        "p95": 13.135099999999989
+        "n": 98,
+        "mean": 11.465377551020394,
+        "median": 11.428499999999957,
+        "p95": 12.165849999999963
       },
       "error_m": {
         "n": 100,
-        "mean": 0.0056079072642815,
-        "median": 0.005193034326217493,
-        "p95": 0.012152268578392309
+        "mean": 0.0065525721182982544,
+        "median": 0.005204510547594246,
+        "p95": 0.01429901656588089
       },
-      "failures": {},
+      "failures": {
+        "placement_error": 2
+      },
       "disturbed": 0
     },
     "reach": {
@@ -57,17 +60,44 @@
       ],
       "cycle_time_s": {
         "n": 100,
-        "mean": 1.266739999999995,
-        "median": 1.258999999999972,
-        "p95": 1.4532500000000028
+        "mean": 1.296369999999994,
+        "median": 1.3434999999999917,
+        "p95": 1.481000000000012
       },
       "error_m": {
         "n": 100,
-        "mean": 0.00041364343196586254,
-        "median": 0.00038800842326532537,
-        "p95": 0.0007307095666174126
+        "mean": 0.00041339870995630185,
+        "median": 0.000355385961359957,
+        "p95": 0.0007865901970235865
       },
       "failures": {},
+      "disturbed": 0
+    },
+    "sort": {
+      "trials": 100,
+      "successes": 93,
+      "success_rate": 0.93,
+      "success_ci": [
+        0.8625032899347025,
+        0.965681175635936
+      ],
+      "cycle_time_s": {
+        "n": 93,
+        "mean": 37.56967741935475,
+        "median": 38.090000000000146,
+        "p95": 39.727999999999795
+      },
+      "error_m": {
+        "n": 100,
+        "mean": 0.011959159236542142,
+        "median": 0.0102621467668392,
+        "p95": 0.018287492071290462
+      },
+      "failures": {
+        "placement_error": 1,
+        "timeout": 3,
+        "unreachable": 3
+      },
       "disturbed": 0
     }
   }

@@ -9,42 +9,43 @@
     "seed": 42,
     "complete": true,
     "unthrottled": true,
-    "wall_time_s": 327.42281864999677,
-    "sim_time_s": 1189.462,
-    "real_time_factor": 3.6328011740424606,
-    "trials_per_minute": 18.324929290935536,
+    "wall_time_s": 358.14907324699743,
+    "sim_time_s": 1162.1650000000002,
+    "real_time_factor": 3.244919746584164,
+    "trials_per_minute": 16.75280057436335,
     "provenance": {
-      "git_commit": "6526dbd3b8c64e85f06b32dbaaac85d3d27f5779",
+      "git_commit": "9434766db0ac8c14da5dedaa77fc143e2a03f8fb",
       "git_dirty": "false",
       "arch": "aarch64",
       "ros_distro": "jazzy",
       "gazebo": "8.15.0",
-      "date": "2026-10-07T08:34:42+00:00"
+      "date": "2026-10-07T14:43:17+00:00"
     }
   },
   "tasks": {
     "pick_place": {
       "trials": 100,
-      "successes": 64,
-      "success_rate": 0.64,
+      "successes": 73,
+      "success_rate": 0.73,
       "success_ci": [
-        0.542352199811621,
-        0.7272892540950986
+        0.6356769977376873,
+        0.8073053908233518
       ],
       "cycle_time_s": {
-        "n": 64,
-        "mean": 11.831999999999969,
-        "median": 11.843999999999994,
-        "p95": 12.716849999999969
+        "n": 73,
+        "mean": 11.15413698630135,
+        "median": 11.157999999999959,
+        "p95": 11.898199999999997
       },
       "error_m": {
-        "n": 64,
-        "mean": 0.006746571414150679,
-        "median": 0.006034939446110369,
-        "p95": 0.013260323698291937
+        "n": 75,
+        "mean": 0.006476677493859831,
+        "median": 0.005694398284658855,
+        "p95": 0.012267765628871838
       },
       "failures": {
-        "dropped": 36
+        "dropped": 25,
+        "placement_error": 2
       },
       "disturbed": 7
     }
