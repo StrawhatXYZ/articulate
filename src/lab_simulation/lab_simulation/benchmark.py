@@ -29,6 +29,7 @@ EXIT_NO_SIMULATION = 2
 EXIT_UNRESPONSIVE = 3
 UNTHROTTLED_RTF = 1000
 ROBOT = 'so101'
+TASKS = ('reach', 'pick_place', 'sort')
 
 
 def make_run_dir(base: Path, now: datetime) -> Path:
@@ -132,7 +133,7 @@ def run(args) -> int:
     from .ros_util import sim_now, spin_until
     from .scene import Scene
     from .so101_kinematics import Kinematics
-    from .tasks import PickPlaceTask, ReachTask
+    from .tasks import PickPlaceTask, ReachTask, SortTask
 
     rclpy.init()
     node = rclpy.create_node(
@@ -162,6 +163,7 @@ def run(args) -> int:
     all_tasks = {
         'reach': ReachTask(arm, scene, kinematics, now),
         'pick_place': PickPlaceTask(arm, gripper, scene, kinematics, now, args.grasp_mode),
+        'sort': SortTask(arm, gripper, scene, kinematics, now, args.grasp_mode),
     }
     tasks = list(all_tasks.values()) if args.task == 'all' else [all_tasks[args.task]]
 
@@ -205,7 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='benchmark', description=__doc__.splitlines()[1])
     sub = parser.add_subparsers(dest='command', required=True)
     run_parser = sub.add_parser('run', help='run trials against the live simulation')
-    run_parser.add_argument('--task', choices=('all', 'reach', 'pick_place'), default='all')
+    run_parser.add_argument('--task', choices=('all', *TASKS), default='all')
     run_parser.add_argument('--trials', type=int, default=100)
     run_parser.add_argument('--seed', type=int, default=42)
     run_parser.add_argument('--out', default='results')

@@ -12,7 +12,7 @@ import random
 from lab_simulation import layout
 from lab_simulation.tasks import (
     CARRY_TOLERANCE_M, GRIP_MAX_OFFSET_M, LATCH_EASE_RAD, MoveResult, PickPlaceTask, PiecePose,
-    ReachTask, vertical_rotation)
+    ReachTask, SortTask, vertical_rotation)
 import numpy as np
 import pytest
 
@@ -68,7 +68,8 @@ class FakeWorld:
         return self.move_to(HOME)
 
     # gripper
-    def release(self):
+    def release(self, angle=OPEN):
+        self.released_to = angle
         self.gripper = OPEN
         if self.held is not None and self.held not in self.latched:
             self._drop()
@@ -269,3 +270,73 @@ def test_jaws_slide_off_the_placed_piece_before_lifting(world):
     assert shift @ place[:3, 0] == pytest.approx(RELEASE_CLEARANCE_M, abs=1e-4)
     assert shift[2] == pytest.approx(0.0, abs=1e-4)
     assert retreat[2, 3] - clear[2, 3] == pytest.approx(layout.HOVER, abs=1e-4)
+
+
+def sort_task(world, mode='latched'):
+    return SortTask(world, world, world, world.kin, world.now, mode)
+
+
+@pytest.mark.parametrize('seed', range(4))
+def test_sort_puts_every_piece_in_its_own_bin(lab_kinematics, seed):
+    world = FakeWorld(lab_kinematics, layout.sample_layout(random.Random(seed)))
+    result = sort_task(world).run(random.Random(seed), 0)
+    assert result.success, result
+    for name, details in result.details['pieces'].items():
+        assert details['in_bin'] and details['failure'] is None
+        assert layout.BINS[name].contains(world.pieces[name].xy, margin=0.015)
+    assert world.latch_calls == sorted(layout.PIECES)
+    assert result.error_m < layout.BIN_INNER / 2
+
+
+def test_sort_opens_the_jaws_only_partly_inside_a_bin(world, monkeypatch):
+    from lab_simulation.tasks import BIN_RELEASE_RAD
+    angles = []
+    real = world.release
+    monkeypatch.setattr(world, 'release', lambda angle=OPEN: angles.append(angle) or real(angle))
+    assert sort_task(world).run(random.Random(0), 0).success
+    assert angles.count(BIN_RELEASE_RAD) == len(layout.PIECES)
+    assert BIN_RELEASE_RAD < OPEN
+
+
+def test_sort_centres_the_jaws_not_the_piece(world):
+    """The gripped piece sits ~9 mm off the jaw centre; the jaws aim at the bin."""
+    result = sort_task(world).run(random.Random(0), 0)
+    assert result.success
+    for name, details in result.details['pieces'].items():
+        offset = math.dist(world.pieces[name].xy, layout.BINS[name].xy)
+        assert offset == pytest.approx(np.linalg.norm(PRESSED), abs=0.002)
+
+
+def test_sort_continues_after_a_miss_and_fails_the_trial(world, monkeypatch):
+    real_grip = world.grip
+    calls = []
+
+    def miss_first():
+        calls.append(1)
+        if len(calls) == 1:
+            world.gripper = CLOSED
+            return CLOSED
+        return real_grip()
+    monkeypatch.setattr(world, 'grip', miss_first)
+    result = sort_task(world).run(random.Random(0), 0)
+    assert not result.success and result.failure == 'grasp_miss'
+    pieces = result.details['pieces']
+    first, *rest = sorted(layout.PIECES)
+    assert pieces[first]['failure'] == 'grasp_miss' and not pieces[first]['in_bin']
+    assert all(pieces[n]['in_bin'] for n in rest)
+
+
+def test_sort_checks_pieces_at_the_end(world, monkeypatch):
+    """A piece knocked out of its bin after being sorted fails the trial."""
+    task = sort_task(world)
+    original = world.wait_settled
+
+    def knock_red_out(timeout_s=3.0):
+        if len(world.moves) >= 24:     # after the last piece's trip home
+            p = world.pieces['red_cube']
+            world.pieces['red_cube'] = p._replace(x=p.x + 0.08)
+        return original(timeout_s)
+    monkeypatch.setattr(world, 'wait_settled', knock_red_out)
+    result = task.run(random.Random(0), 0)
+    assert not result.success and result.failure == 'placement_error'
+    assert not result.details['pieces']['red_cube']['in_bin']

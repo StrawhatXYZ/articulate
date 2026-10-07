@@ -12,7 +12,7 @@ test_layout.py checks that against the arm's kinematics.
 
 import math
 import random
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 TABLE_TOP = 0.75
 PAN_AXIS_XY = (0.0388353, 0.0)   # shoulder_pan axis in the world frame
@@ -25,6 +25,12 @@ MIN_SEPARATION = 0.08   # piece centre to centre: room for the open jaws
 MIN_TRAVEL = 0.05       # a place target must differ from the start
 REACH_CLEARANCE = 0.06  # reach targets stay this far from every piece (xy)
 REACH_HEIGHT = (0.03, 0.08)   # reach targets, above the table top
+# Sorting bins: open boxes standing on the table, one per piece colour.
+BIN_RADIUS = 0.20       # bin centres, from the pan axis
+BIN_INNER = 0.09        # inside width: room for the open jaws (~7 cm span)
+BIN_WALL = 0.005        # wall thickness
+BIN_WALL_HEIGHT = 0.02
+BIN_CLEARANCE = 0.10    # pieces and targets stay this far from bin centres
 
 XY = Tuple[float, float]
 XYZ = Tuple[float, float, float]
@@ -71,6 +77,34 @@ class Piece(NamedTuple):
         return [piece_yaw + (math.pi / 2 if across_y else 0.0)]
 
 
+class Bin(NamedTuple):
+    """An open sorting bin: square, walls only, standing on the table."""
+
+    name: str
+    piece: str              # the piece that belongs in it
+    bearing: float          # rad from straight ahead, around the pan axis
+
+    @property
+    def xy(self) -> XY:
+        """Return the bin's centre on the table."""
+        return (PAN_AXIS_XY[0] + BIN_RADIUS * math.cos(self.bearing),
+                PAN_AXIS_XY[1] + BIN_RADIUS * math.sin(self.bearing))
+
+    @property
+    def outer(self) -> float:
+        """Return the outside width."""
+        return BIN_INNER + 2 * BIN_WALL
+
+    def contains(self, xy: Sequence[float], margin: float = 0.0) -> bool:
+        """Return True if xy lies inside the walls, at least margin from them."""
+        dx, dy = xy[0] - self.xy[0], xy[1] - self.xy[1]
+        c, s = math.cos(self.bearing), math.sin(self.bearing)
+        # Bins are turned to face the arm: local x is radial.
+        lx, ly = c * dx + s * dy, -s * dx + c * dy
+        half = BIN_INNER / 2 - margin
+        return abs(lx) <= half and abs(ly) <= half
+
+
 PIECES: Dict[str, Piece] = {
     piece.name: piece for piece in (
         Piece('red_cube', 'box', 0.015, 0.015, 0.015, 0.030, (0.8, 0.1, 0.1)),
@@ -80,11 +114,42 @@ PIECES: Dict[str, Piece] = {
 }
 
 
+# On the arm's left (positive bearings), side by side; the pieces use the rest
+# of the workspace.
+BINS: Dict[str, Bin] = {
+    b.piece: b for b in (
+        Bin('green_bin', 'green_block', 0.55),
+        Bin('red_bin', 'red_cube', 1.07),
+        Bin('blue_bin', 'blue_cylinder', 1.59),
+    )
+}
+
+
+def bin_walls(bin_: Bin) -> List[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
+    """Return (centre xyz, size xyz) of a bin's four walls, in the bin's frame."""
+    reach = BIN_INNER / 2 + BIN_WALL / 2
+    long = BIN_INNER + 2 * BIN_WALL
+    z = BIN_WALL_HEIGHT / 2
+    return [((reach, 0.0, z), (BIN_WALL, long, BIN_WALL_HEIGHT)),
+            ((-reach, 0.0, z), (BIN_WALL, long, BIN_WALL_HEIGHT)),
+            ((0.0, reach, z), (BIN_INNER, BIN_WALL, BIN_WALL_HEIGHT)),
+            ((0.0, -reach, z), (BIN_INNER, BIN_WALL, BIN_WALL_HEIGHT))]
+
+
+def clear_of_bins(xy: Sequence[float]) -> bool:
+    """Return True if xy is at least BIN_CLEARANCE from every bin centre."""
+    return all(math.dist(xy, b.xy) >= BIN_CLEARANCE for b in BINS.values())
+
+
 def _sample_xy(rng: random.Random) -> XY:
-    # Uniform over the annulus area, not over the radius.
-    r = math.sqrt(rng.uniform(MIN_RADIUS ** 2, MAX_RADIUS ** 2))
-    bearing = rng.uniform(-MAX_BEARING, MAX_BEARING)
-    return (PAN_AXIS_XY[0] + r * math.cos(bearing), PAN_AXIS_XY[1] + r * math.sin(bearing))
+    """Return a workspace point clear of the bins."""
+    while True:
+        # Uniform over the annulus area, not over the radius.
+        r = math.sqrt(rng.uniform(MIN_RADIUS ** 2, MAX_RADIUS ** 2))
+        bearing = rng.uniform(-MAX_BEARING, MAX_BEARING)
+        xy = (PAN_AXIS_XY[0] + r * math.cos(bearing), PAN_AXIS_XY[1] + r * math.sin(bearing))
+        if clear_of_bins(xy):
+            return xy
 
 
 def in_workspace(xy: XY) -> bool:

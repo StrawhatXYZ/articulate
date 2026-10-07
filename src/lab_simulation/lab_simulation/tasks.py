@@ -1,5 +1,5 @@
 """
-Benchmark tasks for the SO-101: reach, and two-finger pick-and-place.
+Benchmark tasks for the SO-101: reach, two-finger pick-and-place, and colour sorting.
 
 Pure Python (no ROS). Tasks drive the robot through small interfaces
 (arm.Arm, gripper.Gripper and scene.Scene implement them; the tests use
@@ -48,6 +48,10 @@ PLACE_SOLVE_ITERATIONS = 5
 # latch frozen in that overlap kicks the piece away when it is released.
 LATCH_EASE_RAD = 0.05
 LATCH_SETTLE_S = 0.3
+# Inside a bin the jaws open only this far to let go: fully open (0.6 rad)
+# the moving jaw reaches 48 mm from the grasp point, past the 45 mm to a wall.
+# At 0.45 rad it clears the piece by ~1 cm, enough for RELEASE_CLEARANCE_M.
+BIN_RELEASE_RAD = 0.45
 # After release, slide the jaws this far along the closing axis, moving the
 # fixed jaw off the piece, before lifting: the gripped piece was pressed
 # against the fixed jaw (grasp frame +x), and lifting straight up would drag
@@ -249,7 +253,15 @@ class PickPlaceTask:
             yaw = achieved
         return q
 
-    def _execute(self, piece, start: PiecePose, target, details: dict) -> Optional[str]:
+    def _execute(self, piece, start: PiecePose, target, details: dict,
+                 aim_jaws: bool = False) -> Optional[str]:
+        """
+        Pick piece from start and set it down at target (xy); return a failure or None.
+
+        With aim_jaws the open jaws, rather than the piece, are centred on
+        target: the piece is gripped off-centre (pressed against the fixed
+        jaw), and centring the jaws keeps them clear of a bin's walls.
+        """
         # Approach: hover over the piece with the jaws across its narrow side,
         # then descend around it. The piece itself is not an obstacle.
         yaws = piece.closing_yaws(start.yaw)
@@ -288,6 +300,9 @@ class PickPlaceTask:
         # Carry: lift, move over the target, lower until the piece just
         # clears the table.
         held_yaw = self._kin.grasp_yaw(self._arm.joint_positions())
+        if aim_jaws:
+            offset = (vertical_rotation(held_yaw) @ grip)[:2]
+            target = (target[0] + offset[0], target[1] + offset[1])
         place_xyz = (target[0], target[1], piece.centre_z + PLACE_CLEARANCE_M)
         try:
             q_lift, _ = self._solve(
@@ -310,7 +325,7 @@ class PickPlaceTask:
         # open jaws leave it. A latched piece stays put while the jaws open,
         # then drops the last few millimetres straight down: unlatching
         # first would let the opening jaw brush it over.
-        opened = self._gripper.release()
+        opened = self._gripper.release(BIN_RELEASE_RAD) if aim_jaws else self._gripper.release()
         self._scene.unlatch(piece.name)
         if not opened:
             return 'timeout'
@@ -332,3 +347,66 @@ class PickPlaceTask:
         self._scene.update_planning_scene()
         home = self._arm.home()
         return _move_failure(home)
+
+
+class SortTask:
+    """Put every piece into the bin of its colour."""
+
+    name = 'sort'
+
+    def __init__(self, arm, gripper, scene, kinematics, now: Callable[[], float],
+                 grasp_mode: str = 'latched'):
+        self._gripper = gripper
+        self._scene = scene
+        self._now = now
+        self._pick = PickPlaceTask(arm, gripper, scene, kinematics, now, grasp_mode)
+
+    def run(self, rng: random.Random, index: int) -> TrialResult:
+        """
+        Sort the current layout, one piece after another.
+
+        A failed pick does not end the trial: the remaining pieces are still
+        sorted, and every piece is checked at the end, so one that was knocked
+        out of its bin later also counts. The trial succeeds only if every
+        piece rests upright inside its own bin.
+        """
+        names = sorted(layout.PIECES)
+        start = {name: self._scene.pose(name) for name in names}
+        pieces: Dict[str, dict] = {}
+        failure = None
+        t0 = self._now()
+        for name in names:
+            bin_ = layout.BINS[name]
+            details = {'bin': bin_.name, 'start': list(start[name].xyz)}
+            try:
+                piece_failure = self._pick._execute(
+                    layout.PIECES[name], start[name], bin_.xy, details, aim_jaws=True)
+            finally:
+                self._scene.unlatch(name)
+                self._gripper.release()
+                self._scene.update_planning_scene()
+            details['failure'] = piece_failure
+            pieces[name] = details
+            failure = failure or piece_failure
+        elapsed = self._now() - t0
+        self._scene.wait_settled()
+        errors = []
+        for name in names:
+            piece, bin_, details = layout.PIECES[name], layout.BINS[name], pieces[name]
+            final = self._scene.pose(name)
+            details['final'] = list(final.xyz)
+            details['final_tilt_deg'] = final.tilt_deg
+            sorted_ok = (bin_.contains(final.xy, margin=min(piece.half_x, piece.half_y))
+                         and abs(final.z - piece.centre_z) <= PLACE_HEIGHT_TOLERANCE_M
+                         and final.tilt_deg <= UPRIGHT_TOLERANCE_DEG)
+            details['in_bin'] = sorted_ok
+            if details['failure'] is None:
+                errors.append(math.dist(final.xy, bin_.xy))
+                if not sorted_ok:
+                    details['failure'] = 'placement_error'
+                    failure = failure or 'placement_error'
+        ok = all(d['in_bin'] for d in pieces.values())
+        if ok:
+            failure = None
+        return TrialResult(self.name, index, ok, failure, elapsed,
+                           max(errors) if errors else None, details={'pieces': pieces})

@@ -58,10 +58,10 @@ class Gripper:
             return None
         return settled[0]
 
-    def release(self) -> bool:
-        """Open the jaws; return True once they are open."""
-        position = self._command(OPEN)
-        return position is not None and abs(position - OPEN) <= OPEN_TOLERANCE
+    def release(self, angle: float = OPEN) -> bool:
+        """Open the jaws to angle (default fully open); True once they are there."""
+        position = self._command(angle)
+        return position is not None and abs(position - angle) <= OPEN_TOLERANCE
 
     def grip(self) -> Optional[float]:
         """Close the jaws; return the angle they stall at, or None on timeout."""

@@ -8,7 +8,8 @@ import math
 import statistics
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-ERROR_LABELS = {'reach': 'Tip error (m)', 'pick_place': 'Placement error (m)'}
+ERROR_LABELS = {'reach': 'Tip error (m)', 'pick_place': 'Placement error (m)',
+                'sort': 'Worst distance from bin centre (m)'}
 
 
 def wilson_interval(successes: int, n: int, z: float = 1.96) -> Tuple[float, float]:

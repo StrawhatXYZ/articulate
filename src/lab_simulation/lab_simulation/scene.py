@@ -65,6 +65,23 @@ def _names(value: Names) -> Collection[str]:
     return (value,) if isinstance(value, str) else value
 
 
+def bin_object(bin_: layout.Bin) -> CollisionObject:
+    """Return a sorting bin's walls as one collision object."""
+    obj = CollisionObject(id=bin_.name, operation=CollisionObject.ADD)
+    obj.header.frame_id = FRAME
+    c, s = math.cos(bin_.bearing), math.sin(bin_.bearing)
+    for (x, y, z), size in layout.bin_walls(bin_):
+        obj.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=list(size)))
+        pose = Pose()
+        pose.position.x = bin_.xy[0] + c * x - s * y
+        pose.position.y = bin_.xy[1] + s * x + c * y
+        pose.position.z = layout.TABLE_TOP + z
+        pose.orientation.z = math.sin(bin_.bearing / 2)
+        pose.orientation.w = math.cos(bin_.bearing / 2)
+        obj.primitive_poses.append(pose)
+    return obj
+
+
 def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
                    held: Optional[str] = None, previously_held: Optional[str] = None,
                    in_world: Collection[str] = ()) -> PlanningScene:
@@ -89,6 +106,8 @@ def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
     table_pose.orientation.w = 1.0
     table.primitive_poses = [table_pose]
     scene.world.collision_objects.append(table)
+    for bin_ in layout.BINS.values():
+        scene.world.collision_objects.append(bin_object(bin_))
     if previously_held is not None and previously_held != held:
         released = AttachedCollisionObject(link_name=HELD_LINK)
         released.object.id = previously_held

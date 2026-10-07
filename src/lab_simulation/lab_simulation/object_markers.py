@@ -1,6 +1,7 @@
 """Publish RViz markers for the table and the pieces at their live poses."""
 
 from functools import partial
+import math
 from typing import Dict
 
 from geometry_msgs.msg import Pose
@@ -59,6 +60,20 @@ class ObjectMarkers(Node):
         table.pose.orientation.w = 1.0
         table.color.a = 0.6
         markers.markers.append(table)
+        marker_id = 100
+        for bin_ in layout.BINS.values():
+            colour = layout.PIECES[bin_.piece].colour
+            c, s = math.cos(bin_.bearing), math.sin(bin_.bearing)
+            for (x, y, z), size in layout.bin_walls(bin_):
+                wall = self._marker(marker_id, Marker.CUBE, size, colour)
+                wall.pose.position.x = bin_.xy[0] + c * x - s * y
+                wall.pose.position.y = bin_.xy[1] + s * x + c * y
+                wall.pose.position.z = layout.TABLE_TOP + z
+                wall.pose.orientation.z = math.sin(bin_.bearing / 2)
+                wall.pose.orientation.w = math.cos(bin_.bearing / 2)
+                wall.color.a = 0.7
+                markers.markers.append(wall)
+                marker_id += 1
         for marker_id, name in enumerate(sorted(SHAPES), start=1):
             if name not in self._poses:
                 continue

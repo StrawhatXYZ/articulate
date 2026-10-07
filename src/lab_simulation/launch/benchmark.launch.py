@@ -30,7 +30,7 @@ def generate_launch_description():
 
     declare_args = [
         DeclareLaunchArgument('task', default_value='all',
-                              description='all, reach or pick_place'),
+                              description='all, reach, pick_place or sort'),
         DeclareLaunchArgument('trials', default_value='100', description='Trials per task'),
         DeclareLaunchArgument('seed', default_value='42', description='Random seed'),
         DeclareLaunchArgument('out', default_value='/workspace/results',

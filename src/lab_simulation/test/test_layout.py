@@ -93,3 +93,51 @@ def test_open_jaws_fit_between_neighbours():
     """MIN_SEPARATION leaves room for the open jaws (~45 mm) beside a piece."""
     widest = max(max(p.half_x, p.half_y) for p in layout.PIECES.values())
     assert layout.MIN_SEPARATION - 2 * widest >= 0.03
+
+
+def test_one_bin_per_piece():
+    assert sorted(layout.BINS) == sorted(layout.PIECES)
+    assert {b.piece for b in layout.BINS.values()} == set(layout.PIECES)
+
+
+def test_bins_are_in_the_workspace_and_apart():
+    bins = list(layout.BINS.values())
+    for i, a in enumerate(bins):
+        assert layout.in_workspace(a.xy)
+        for b in bins[i + 1:]:
+            assert math.dist(a.xy, b.xy) >= a.outer
+
+
+def test_open_jaws_fit_in_a_bin():
+    """The open jaws span ~7 cm along the closing axis (fixed to moving jaw)."""
+    assert layout.BIN_INNER >= 0.085
+
+
+@pytest.mark.parametrize('piece', sorted(layout.PIECES))
+@pytest.mark.parametrize('offset', [(0.0, 0.0), (0.01, 0.0), (-0.01, 0.0), (0.0, 0.01),
+                                    (0.0, -0.01)])
+def test_every_bin_is_reachable_for_its_piece(lab_kinematics, piece, offset):
+    bin_ = layout.BINS[piece]
+    p = layout.PIECES[piece]
+    x, y = bin_.xy[0] + offset[0], bin_.xy[1] + offset[1]
+    for z in (p.centre_z + 0.003, p.centre_z + 0.003 + layout.LIFT):
+        assert any(lab_kinematics.is_reachable((x, y, z), yaw) for yaw in (0.0, math.pi / 2))
+
+
+def test_bin_contains():
+    bin_ = layout.BINS['red_cube']
+    x, y = bin_.xy
+    assert bin_.contains((x, y))
+    assert bin_.contains((x + 0.04, y), margin=0.0)
+    assert not bin_.contains((x + 0.04, y), margin=0.015)
+    assert not bin_.contains((x + 0.06, y))
+
+
+@pytest.mark.parametrize('seed', range(50))
+def test_samples_stay_clear_of_the_bins(seed):
+    rng = random.Random(seed)
+    positions = layout.sample_layout(rng)
+    target = layout.sample_place_target(rng, 'red_cube', positions)
+    reach = layout.sample_reach_target(rng, positions)
+    for xy in (*positions.values(), target, reach[:2]):
+        assert layout.clear_of_bins(xy)

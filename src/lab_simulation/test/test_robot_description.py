@@ -193,6 +193,7 @@ def test_pieces_start_inside_the_workspace():
     starts = {n: floats(WORLD_MODELS[n].find('pose').text)[:2] for n in layout.PIECES}
     for name, xy in starts.items():
         assert layout.in_workspace(xy), name
+        assert layout.clear_of_bins(xy), name
         for other, other_xy in starts.items():
             if other != name:
                 assert math.dist(xy, other_xy) >= layout.MIN_SEPARATION
@@ -224,3 +225,18 @@ def test_demo_respects_urdf_limits(robot):
         for name, value in zip(demo.JOINT_NAMES, pose):
             lower, upper = demo.JOINT_LIMITS[name]
             assert lower <= value <= upper
+
+
+@pytest.mark.parametrize('piece', sorted(layout.BINS))
+def test_bins_in_the_world_match_layout(piece):
+    bin_ = layout.BINS[piece]
+    model = WORLD_MODELS[bin_.name]
+    assert model.find('static').text == 'true'
+    x, y, z, _, _, yaw = floats(model.find('pose').text)
+    assert (x, y, z, yaw) == pytest.approx((*bin_.xy, layout.TABLE_TOP, bin_.bearing), abs=1e-4)
+    walls = [v for c in model.findall('link/collision')
+             for v in floats(c.find('pose').text)[:3] + floats(c.find('geometry/box/size').text)]
+    expected = [v for centre, size in layout.bin_walls(bin_) for v in (*centre, *size)]
+    assert walls == pytest.approx(expected, abs=1e-4)
+    diffuse = model.find('link/visual/material/diffuse').text
+    assert floats(diffuse)[:3] == pytest.approx(layout.PIECES[piece].colour)

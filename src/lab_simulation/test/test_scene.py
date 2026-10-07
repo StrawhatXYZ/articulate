@@ -28,7 +28,8 @@ def world_ids(scene, operation=CollisionObject.ADD):
 def test_table_and_all_pieces_are_obstacles():
     scene = planning_scene(poses())
     assert scene.is_diff and scene.robot_state.is_diff
-    assert world_ids(scene) == {'table', *layout.PIECES}
+    bins = {b.name for b in layout.BINS.values()}
+    assert world_ids(scene) == {'table', *bins, *layout.PIECES}
     table = next(o for o in scene.world.collision_objects if o.id == 'table')
     top = table.primitive_poses[0].position.z + table.primitives[0].dimensions[2] / 2
     # Just below the real table top, so the arm's base box is not in collision.
@@ -40,7 +41,7 @@ def test_excluded_piece_is_removed_only_if_present():
     assert 'red_cube' not in world_ids(scene)
     assert world_ids(scene, CollisionObject.REMOVE) == {'red_cube'}
     fresh = planning_scene(poses(), exclude=list(layout.PIECES), in_world=())
-    assert world_ids(fresh) == {'table'}
+    assert world_ids(fresh) == {'table', *(b.name for b in layout.BINS.values())}
     assert world_ids(fresh, CollisionObject.REMOVE) == set()
 
 
@@ -100,3 +101,14 @@ def test_pieces_keep_their_colour_in_moveit():
     colours = {c.id: (c.color.r, c.color.g, c.color.b, c.color.a) for c in scene.object_colors}
     for name, piece in layout.PIECES.items():
         assert colours[name] == pytest.approx((*piece.colour, 1.0))
+
+
+def test_bins_are_obstacles_with_four_walls():
+    scene = planning_scene(poses())
+    for bin_ in layout.BINS.values():
+        obj = next(o for o in scene.world.collision_objects if o.id == bin_.name)
+        assert len(obj.primitives) == 4
+        centre_x = sum(p.position.x for p in obj.primitive_poses) / 4
+        centre_y = sum(p.position.y for p in obj.primitive_poses) / 4
+        assert (centre_x, centre_y) == pytest.approx(bin_.xy, abs=1e-6)
+        assert all(p.position.z > layout.TABLE_TOP for p in obj.primitive_poses)
