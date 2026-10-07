@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!--
+  The SO-101 arm on its own, fixed to the world origin. For RViz checks and
+  tests; the lab simulation wraps the macro in lab_simulation/urdf.
+-->
+<robot name="so101" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find so101_description)/urdf/so101_macro.xacro"/>
+  <link name="world"/>
+  <xacro:so101 parent="world">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:so101>
+</robot>
