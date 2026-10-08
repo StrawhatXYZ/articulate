@@ -51,8 +51,8 @@ RUN apt-get update && apt-get install -y \
     && ln -sf /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz /usr/local/bin/gz \
     && python3 -m venv --system-site-packages /opt/lab-ai \
     && /opt/lab-ai/bin/pip install --no-cache-dir \
-        --extra-index-url https://download.pytorch.org/whl/cpu \
-        torch==2.14.1 \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.14.1 \
+    && /opt/lab-ai/bin/pip install --no-cache-dir \
         transformers==5.19.0 \
         sentencepiece==0.2.2
 
