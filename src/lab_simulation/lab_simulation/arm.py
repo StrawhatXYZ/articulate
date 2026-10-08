@@ -26,7 +26,10 @@ ACCELERATION_SCALING = 0.5
 GOAL_TOLERANCE_RAD = 0.001     # planner goal tolerance per joint
 REACHED_TOLERANCE_RAD = 0.02   # measured joint error that counts as arrived
 MOVE_TIMEOUT_S = 30.0          # simulation seconds for planning plus execution
-FEEDBACK_TIMEOUT_S = 5.0
+# Wall seconds without /joint_states that count as a frozen simulation. Camera
+# rendering plus model inference on a loaded CPU can pause the simulation for
+# a few seconds without anything being wrong.
+FEEDBACK_TIMEOUT_S = 15.0
 SERVER_TIMEOUT_S = 60.0        # wall seconds to wait for move_group
 
 # MoveIt error codes that mean no motion was executed because no valid plan
