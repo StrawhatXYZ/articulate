@@ -11,8 +11,11 @@ It simulates the **SO-101**, the low-cost open-source arm the lab plans to
 buy, built from its official model. The arm picks pieces up with its own
 two-finger gripper, driven through ros2_control, with every move planned by
 MoveIt. Its headline task is colour sorting: putting each piece into the
-box of its own colour. A seeded benchmark measures reach, pick-and-place and
-sorting performance.
+box of its own colour. With perception switched on, the robot finds and
+names the pieces itself from an overhead RGB-D camera, using an
+open-vocabulary vision model (SigLIP 2), instead of being told where they
+are. A seeded benchmark measures reach, pick-and-place and sorting
+performance, with and without perception.
 Everything runs inside Docker and is viewed in a web browser, so no host-side
 ROS, X server or GPU is required.
 
@@ -23,12 +26,14 @@ ROS, X server or GPU is required.
 | ros2_control | Jazzy | Arm and gripper controllers, running inside Gazebo (gz_ros2_control) |
 | MoveIt 2 | Jazzy | Collision-aware motion planning for every move |
 | RViz 2 | Jazzy | 3D visualisation of the robot model and TF |
+| SigLIP 2 | `google/siglip2-base-patch16-224` | Names what the camera sees (zero-shot, CPU, PyTorch) |
 
 ## Requirements
 
 - Docker Desktop with at least 8 GB of memory allocated
   (or Docker Engine on Linux)
-- About 10 GB of free disk space for the image
+- About 12 GB of free disk space: the image, plus 1.5 GB of vision-model
+  weights downloaded on first use (kept in the `hf-cache` Docker volume)
 - A web browser
 
 | Host | Support |
@@ -114,6 +119,37 @@ ros2 launch lab_simulation arm_world.launch.py [argument:=value ...]
 | `rviz` | `true` | Start RViz 2 with the arm, the pieces and MoveIt's motion planning panel |
 | `gz_gui` | `false` | Also start the Gazebo GUI. It uses several CPU cores under software rendering, so RViz is the lighter viewer. |
 | `use_sim_time` | `true` | Drive ROS nodes from the Gazebo `/clock` |
+| `perception` | `false` | Add the overhead RGB-D camera and the perception node (see [Seeing the table](#seeing-the-table)) |
+
+### Seeing the table
+
+```bash
+ros2 launch lab_simulation arm_world.launch.py perception:=true
+ros2 topic echo /lab/perception/objects     # in a second terminal
+```
+
+With `perception:=true` an RGB-D camera looks down on the table from the
+front right, and RViz shows its picture in the **Camera** panel. On request,
+the perception node (`src/lab_perception`) turns a frame into named
+objects, published as `vision_msgs/Detection3DArray`:
+
+1. **Find** (depth geometry): pixels standing more than 5 mm above the
+   table, inside the arm's reach and outside the boxes, are grouped into
+   objects. Each object's position and angle come from its top surface.
+2. **Name** (SigLIP 2): each object's colour crop is compared with text
+   prompts such as "a photo of a red cube"; the most similar wins. A weak or
+   ambiguous match is reported as `unknown` and never picked. Adding an
+   object type needs only a new prompt, not new training data.
+
+The first launch downloads the model (1.5 GB). The node runs with the
+`/opt/lab-ai` interpreter, which has CPU PyTorch.
+
+To make the robot act on what it sees, run the benchmark with
+`perception:=vision` (see [Benchmark](#benchmark)):
+
+```bash
+ros2 launch lab_simulation benchmark.launch.py task:=sort trials:=3 perception:=vision rviz:=true realtime:=true
+```
 
 ### Planning in RViz
 
@@ -201,6 +237,7 @@ compose file, the scripts or the package change.
 TASK=sort TRIALS=10 ./run-benchmark.sh              # colour sorting only
 TASK=pick_place TRIALS=10 ./run-benchmark.sh        # quick check
 TASK=pick_place GRASP_MODE=friction ./run-benchmark.sh   # without the grasp latch
+TASK=sort PERCEPTION=vision ./run-benchmark.sh      # plan from the camera
 ```
 
 | Task | What happens | Success means |
@@ -209,11 +246,22 @@ TASK=pick_place GRASP_MODE=friction ./run-benchmark.sh   # without the grasp lat
 | `pick_place` | The jaws close on a random piece; MoveIt carries it to a random target | Jaws closed on the piece, held within 1 cm of its grip while carried, placed within 2 cm of the target, upright (tilt under 15°) on the table |
 | `sort` | Every piece, one after another, is put into the box of its colour | All three pieces end upright inside their own boxes (checked at the end, so a piece knocked out later counts) |
 
-Failures are classified as `unreachable`, `planning_failed`, `grasp_miss`,
-`dropped`, `placement_error` or `timeout`. Success rates carry 95% Wilson
+Failures are classified as `unreachable`, `planning_failed`, `not_found`,
+`grasp_miss`, `dropped`, `placement_error` or `timeout`; each pick also
+records the stage it reached. Success rates carry 95% Wilson
 intervals. Robot timings are in simulation seconds; trials per minute and
 real-time factor are wall-clock. The benchmark lifts Gazebo's real-time cap
-unless `realtime:=true`.
+unless `realtime:=true`. Every trial randomises the pieces' positions and
+angles and the lighting, from the seed.
+
+**Perception modes.** With `perception:=ground_truth` (the default) the
+robot plans from the simulator's exact poses. With `perception:=vision` it
+plans only from the camera's detections, including where MoveIt's obstacles
+are, and looks again before every pick; a piece it cannot see fails as
+`not_found`. The true poses are used only to score the outcome. Vision-mode
+reports add a detection-quality table (naming accuracy, position error,
+missed and false detections, latency); cycle times leave out the time spent
+waiting for the camera.
 
 ### Step 2 baseline (SO-101)
 
@@ -252,6 +300,27 @@ The step 1 baseline (3-DOF arm, native and emulated images) stays in
 [`benchmarks/baseline/`](benchmarks/baseline/); step 1 itself can be checked
 out as tag `v0.2.0`.
 
+### M3a baseline: sorting from the camera
+
+Colour sorting, seed 42, 100 trials each, random positions, angles and
+lighting; [`benchmarks/m3a/`](benchmarks/m3a/) has the reports and the full
+comparison.
+
+| | Ground truth (simulator poses) | Vision (camera + SigLIP 2) |
+|---|---|---|
+| Sorting success (all 3 pieces) | 93% (86–97%) | **92% (85–96%)** |
+| Sorting time, mean (excluding camera waits) | 37.2 s | 34.9 s |
+| Pieces named correctly | – | 588 / 588 |
+| Detection position error, mean / p95 | – | 1.4 / 1.8 mm |
+| Missed / false detections | – | 0 / 0 |
+| Wait per look | – | 1.2 s |
+| Trials per minute | 3.9 | 2.9 |
+
+Planning only from what the camera sees costs one point of success, well
+within the statistical noise: perception is not the bottleneck. The main
+remaining failure in both modes is the tall cylinder tipping over after it
+is released in its box.
+
 Compare two runs. Success rates are tested for significance (overlapping 95%
 intervals read "not significant"); other rows have no test and read
 "not tested". Runs with different robots, grasp modes, seeds, trial counts or
@@ -276,6 +345,8 @@ docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros
  │  └─ grasp latch (DetachableJoint) ◄─┼bridge┼── /lab/latch/<piece>/*      benchmark │
  │ piece PosePublishers ───────────────┼bridge┼─► /lab/pieces/<piece>/pose ─► RViz    │
  │ clock ──────────────────────────────┼bridge┼─► /clock                              │
+ │ overhead RGB-D camera ──────────────┼bridge┼─► perception node (SigLIP 2) ──────►  │
+ │   (perception:=true)                │      │   /lab/perception/objects ─► benchmark │
  └─────────────────────────────────────┘      └────────────────────────────────────────┘
 ```
 
@@ -295,7 +366,10 @@ into Gazebo and read by RViz and MoveIt, so they cannot drift apart.
 | `/lab/pieces/<piece>/pose` | `geometry_msgs/msg/PoseStamped` | Live world pose of each piece |
 | `/lab/latch/<piece>/{attach,detach}` | `std_msgs/msg/Empty` | Engage or release the grasp latch |
 | `/lab/latch/<piece>/state` | `std_msgs/msg/String` | Latch state: `attached` or `detached` |
-| `/lab/piece_markers` | `visualization_msgs/msg/MarkerArray` | Table and pieces for RViz |
+| `/lab/piece_markers` | `visualization_msgs/msg/MarkerArray` | Table, pieces and boxes for RViz |
+| `/lab/camera/{image,depth_image,camera_info}` | `sensor_msgs/msg/Image`, `CameraInfo` | Overhead RGB-D camera (perception only) |
+| `/lab/perception/request` | `std_msgs/msg/Empty` | Ask for one detection of the next frame |
+| `/lab/perception/objects` | `vision_msgs/msg/Detection3DArray` | Named objects: label, score, 3D pose |
 | `/world/table_world/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | Teleport a piece (benchmark resets) |
 
 The bridge mapping lives in `config/bridge.yaml`.
@@ -364,7 +438,8 @@ ai-robotics-lab/
 ├── run-benchmark.sh           # Run the benchmark in the container; results in ./results/
 ├── benchmarks/
 │   ├── baseline/              # Step 1 baseline (3-DOF arm, suction)
-│   └── step2/                 # Step 2 baseline (SO-101), and the comparison
+│   ├── step2/                 # Step 2 baseline (SO-101), and the comparison
+│   └── m3a/                   # M3a: sorting from the camera vs ground truth
 ├── docs/superpowers/          # Design specs and implementation plans
 ├── LICENSE                    # Apache License 2.0
 ├── NOTICE                     # Copyright notice
@@ -376,6 +451,7 @@ ai-robotics-lab/
     │   ├── meshes/            # Upstream meshes, their licence and SOURCE.md
     │   └── tools/generate_xacro.py
     ├── so101_moveit_config/   # SRDF, IK, limits, OMPL, controllers, move_group launch
+    ├── lab_perception/        # Camera model, depth segmentation, SigLIP 2 naming, ROS node
     └── lab_simulation/        # The lab: world, tasks, benchmark
         ├── config/            # RViz, ros_gz_bridge, ros2_control
         ├── lab_simulation/    # Python package
@@ -446,17 +522,20 @@ Verified on 7 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 | MoveIt plans and executes every move around the table and pieces | Working |
 | Two-finger pick-and-place, visible in RViz | Working, 98% at baseline (latched), 73% friction-only |
 | Colour sorting into matching boxes | Working, 93% at baseline |
+| Sorting from the camera alone (SigLIP 2 naming) | Working, 92% (ground truth 93%) |
 | Seeded benchmark with committed baselines | Working (see `benchmarks/`) |
-| Test suite (unit, consistency, linters) | Working, 571 checks passing |
+| Test suite (unit, consistency, linters) | Working, 650 checks passing |
 
-Planned next steps:
+The AI plan has three milestones, each measured on this benchmark:
 
-1. **Camera and perception.** An RGB-D camera over the table; find pieces
-   from images instead of from the simulator's ground truth.
-2. **Instructions.** "Pick up the red cube", typed or spoken, turned into a
-   task by a language model.
-3. **Learned policies.** Record demonstrations and train a LeRobot policy;
-   compare it with the scripted MoveIt pick on this benchmark.
+1. **M3a Vision** (done): the robot finds and names the pieces from an
+   overhead camera.
+2. **M3b Language** (next): instructions such as "put the red cube in its
+   box", typed and then spoken, turned into robot skills by a language-model
+   planner behind a safety gate.
+3. **M4 Learning**: the scripted pipeline becomes a demonstration data
+   engine; learned policies (ACT, then SmolVLA) are trained on it and
+   compared with the scripted skills.
 
 ### The pipeline
 
