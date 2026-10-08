@@ -120,3 +120,27 @@ def test_bins_can_be_left_out_so_a_stuck_arm_can_get_home():
     assert not names & world_ids(first) and not names & world_ids(first, CollisionObject.REMOVE)
     later = planning_scene(poses(), bins=False, bins_in_world=True)
     assert world_ids(later, CollisionObject.REMOVE) == names
+
+
+def test_a_released_piece_not_seen_again_is_removed():
+    """
+    Remove a released piece that vision no longer sees.
+
+    A piece in a bin is masked out of detection, and MoveIt puts a released
+    piece back into its world: without the removal a ghost stays behind.
+    """
+    seen = {n: p for n, p in poses().items() if n != 'green_block'}
+    scene = planning_scene(seen, previously_held='green_block', in_world=())
+    assert world_ids(scene, CollisionObject.REMOVE) == {'green_block'}
+
+
+def test_a_piece_moveit_holds_but_nobody_sees_is_removed():
+    seen = {n: p for n, p in poses().items() if n != 'red_cube'}
+    scene = planning_scene(seen, in_world={'red_cube', 'blue_cylinder'})
+    assert world_ids(scene, CollisionObject.REMOVE) == {'red_cube'}
+    assert 'red_cube' not in world_ids(scene)
+
+
+def test_present_pieces_returns_what_moveit_holds_afterwards():
+    from lab_simulation.scene import present_pieces
+    assert present_pieces(poses(), exclude='red_cube', held='green_block') == {'blue_cylinder'}

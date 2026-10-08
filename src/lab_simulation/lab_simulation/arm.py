@@ -46,6 +46,11 @@ PLANNING_FAILURES = {
     MoveItErrorCodes.INVALID_GOAL_CONSTRAINTS,
     MoveItErrorCodes.INVALID_ROBOT_STATE,
     MoveItErrorCodes.NO_IK_SOLUTION,
+    MoveItErrorCodes.GOAL_STATE_INVALID,
+    MoveItErrorCodes.START_STATE_INVALID,
+    MoveItErrorCodes.INVALID_LINK_NAME,
+    MoveItErrorCodes.INVALID_OBJECT_NAME,
+    MoveItErrorCodes.FRAME_TRANSFORM_FAILURE,
 }
 
 MIN_MOVE_S = 0.3        # do not judge "settled" before motion has started

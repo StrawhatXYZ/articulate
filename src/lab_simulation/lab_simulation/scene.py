@@ -96,6 +96,13 @@ def bin_object(bin_: layout.Bin) -> CollisionObject:
     return obj
 
 
+def present_pieces(poses: Dict[str, Pose], exclude: Names = None,
+                   held: Optional[str] = None) -> Set[str]:
+    """Return the pieces a planning_scene diff leaves in MoveIt's world."""
+    exclude = _names(exclude)
+    return {n for n in poses if n in layout.PIECES and n not in exclude and n != held}
+
+
 def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
                    held: Optional[str] = None, previously_held: Optional[str] = None,
                    in_world: Collection[str] = (), bins: bool = True,
@@ -105,9 +112,11 @@ def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
 
     exclude leaves pieces out (one the open jaws are around, or all of them
     while the scene is being reset); held attaches a piece to the gripper so
-    planning carries it along. in_world lists the pieces the scene already
-    holds as world objects; only those are removed. MoveIt puts a detached
-    object back into the world, so a piece being released counts as present.
+    planning carries it along. Pieces missing from poses (not seen) are left
+    out too. in_world lists the pieces MoveIt already holds as world objects;
+    any of those not added again is removed, so no ghost of an unseen piece
+    stays behind. MoveIt puts a detached object back into the world, so a
+    piece being released counts as held by MoveIt.
     bins=False leaves the sorting bins out (removing them if bins_in_world),
     so an arm stuck inside a bin can still plan its way home.
     """
@@ -135,10 +144,10 @@ def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
         released.object.operation = CollisionObject.REMOVE
         scene.robot_state.attached_collision_objects.append(released)
         in_world.add(previously_held)
-    for name in sorted(poses):
+    for name in sorted(layout.PIECES):
         obj = CollisionObject(id=name)
         obj.header.frame_id = FRAME
-        if name in exclude:
+        if name in exclude or name not in poses:
             if name in in_world:
                 obj.operation = CollisionObject.REMOVE
                 scene.world.collision_objects.append(obj)
@@ -318,7 +327,7 @@ class Scene:
                                  self._bins_in_world))
         self._held = held
         self._bins_in_world = bins
-        self._in_world = {n for n in poses if n not in _names(exclude) and n != held}
+        self._in_world = present_pieces(poses, exclude, held)
         if not self._apply_scene.wait_for_service(timeout_sec=10.0):
             return False
         future = self._apply_scene.call_async(request)

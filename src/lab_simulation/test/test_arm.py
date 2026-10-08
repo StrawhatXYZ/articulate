@@ -92,3 +92,11 @@ def test_home_matches_the_srdf():
     state = {j.get('name'): float(j.get('value'))
              for j in srdf.find("group_state[@name='home']").findall('joint')}
     assert tuple(state[name] for name in ARM_JOINTS) == pytest.approx(HOME)
+
+
+def test_every_planning_side_error_counts_as_a_planning_failure():
+    """GOAL_STATE_INVALID (goal in collision) was once reported as a timeout."""
+    for code in (MoveItErrorCodes.GOAL_STATE_INVALID, MoveItErrorCodes.START_STATE_INVALID,
+                 MoveItErrorCodes.INVALID_LINK_NAME, MoveItErrorCodes.INVALID_OBJECT_NAME,
+                 MoveItErrorCodes.FRAME_TRANSFORM_FAILURE):
+        assert code in PLANNING_FAILURES
