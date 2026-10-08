@@ -7,6 +7,13 @@ find_package(ament_cmake_python REQUIRED)
 # The lab_perception Python package (camera model, segmentation, naming).
 ament_python_install_package(${PROJECT_NAME})
 
+# Installed as an executable so launch files can start it (with the
+# /opt/lab-ai interpreter as prefix).
+install(PROGRAMS
+  scripts/perception_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # Source files carry no per-file copyright headers; the license is declared

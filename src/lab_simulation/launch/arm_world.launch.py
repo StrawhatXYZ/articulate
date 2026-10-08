@@ -10,16 +10,20 @@ Starts:
   4. ros_gz_bridge for /clock, the piece poses, the grasp latch and resets
   5. MoveIt's move_group, and RViz with the motion planning panel (optional)
   6. Piece markers for RViz (object_markers)
+  7. With perception:=true: the overhead RGB-D camera and the perception
+     node, which publishes named detections on /lab/perception/objects
 
 Usage:
   ros2 launch lab_simulation arm_world.launch.py
   ros2 launch lab_simulation arm_world.launch.py rviz:=false
   ros2 launch lab_simulation arm_world.launch.py gz_gui:=true
+  ros2 launch lab_simulation arm_world.launch.py perception:=true
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from lab_simulation import overhead_camera
 from lab_simulation.description import robot_description
 from lab_simulation.layout import PIECES
 from launch import LaunchDescription
@@ -62,7 +66,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_sim_time', default_value='true',
             description='Use the Gazebo /clock instead of wall time'),
+        DeclareLaunchArgument(
+            'perception', default_value='false',
+            description='Add the overhead RGB-D camera and the perception node'),
     ]
+    perception = IfCondition(LaunchConfiguration('perception'))
 
     # -r starts the simulation unpaused; -s runs the server without a GUI.
     # Shutting down the whole launch when Gazebo exits avoids orphaned nodes.
@@ -141,6 +149,34 @@ def generate_launch_description():
             output='log')
         for topic in (f'/lab/latch/{name}/detach' for name in sorted(PIECES))]
 
+    camera = Node(
+        package='ros_gz_sim',
+        executable='create',
+        arguments=overhead_camera.spawn_arguments(),
+        condition=perception,
+        output='screen')
+
+    topic = overhead_camera.TOPIC
+    camera_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='camera_bridge',
+        arguments=[f'/{topic}/image@sensor_msgs/msg/Image[gz.msgs.Image',
+                   f'/{topic}/depth_image@sensor_msgs/msg/Image[gz.msgs.Image',
+                   f'/{topic}/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo'],
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=perception,
+        output='screen')
+
+    # Runs with the interpreter that has PyTorch (see the Dockerfile).
+    perception_node = Node(
+        package='lab_perception',
+        executable='perception_node.py',
+        prefix='/opt/lab-ai/bin/python',
+        parameters=[overhead_camera.perception_parameters(), {'use_sim_time': use_sim_time}],
+        condition=perception,
+        output='screen')
+
     return LaunchDescription([
         *declare_args,
         gazebo_server,
@@ -152,4 +188,7 @@ def generate_launch_description():
         move_group,
         object_markers,
         *release_latches,
+        camera,
+        camera_bridge,
+        perception_node,
     ])

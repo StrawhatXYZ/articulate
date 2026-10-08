@@ -16,6 +16,18 @@
 <sdf version="1.8">
   <world name="table_world">
 
+    <!-- World systems. Listing any system replaces Gazebo's defaults, so
+         physics, user commands (teleport, lights) and the scene broadcaster
+         are listed with the sensors system that renders the overhead camera
+         (spawned only with perception:=true). -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
     <!-- Physics settings: 1ms time step, real-time simulation -->
     <physics type="ode">
       <max_step_size>0.001</max_step_size>
