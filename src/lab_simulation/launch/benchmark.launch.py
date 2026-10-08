@@ -7,6 +7,7 @@ Usage:
   ros2 launch lab_simulation benchmark.launch.py task:=pick_place trials:=5 \
       rviz:=true realtime:=true
   ros2 launch lab_simulation benchmark.launch.py grasp_mode:=friction
+  ros2 launch lab_simulation benchmark.launch.py task:=sort perception:=vision
 """
 
 import os
@@ -15,12 +16,13 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import EmitEvent
+from launch.actions import GroupAction
 from launch.actions import IncludeLaunchDescription
 from launch.actions import RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -41,11 +43,20 @@ def generate_launch_description():
                               description='Run at real time instead of uncapped (for watching)'),
         DeclareLaunchArgument('grasp_mode', default_value='latched',
                               description='latched (default) or friction; see the README'),
+        DeclareLaunchArgument('perception', default_value='ground_truth',
+                              description='ground_truth (default) or vision: plan from the'
+                                          ' overhead camera'),
     ]
 
-    simulation = IncludeLaunchDescription(
+    # Scoped, so the included launch's own perception argument (true/false)
+    # does not overwrite this launch's (ground_truth/vision).
+    simulation = GroupAction(scoped=True, actions=[IncludeLaunchDescription(
         PythonLaunchDescriptionSource(world_launch),
-        launch_arguments={'rviz': LaunchConfiguration('rviz')}.items())
+        launch_arguments={
+            'rviz': LaunchConfiguration('rviz'),
+            'perception': PythonExpression(
+                ["'true' if '", LaunchConfiguration('perception'), "' == 'vision' else 'false'"]),
+        }.items())])
 
     benchmark = Node(
         package='lab_simulation',
@@ -57,7 +68,8 @@ def generate_launch_description():
                    '--seed', LaunchConfiguration('seed'),
                    '--out', LaunchConfiguration('out'),
                    '--realtime', LaunchConfiguration('realtime'),
-                   '--grasp-mode', LaunchConfiguration('grasp_mode')],
+                   '--grasp-mode', LaunchConfiguration('grasp_mode'),
+                   '--perception', LaunchConfiguration('perception')],
         parameters=[{'use_sim_time': True}],
         output='screen')
 

@@ -21,6 +21,7 @@ Usage:
 """
 
 import os
+import subprocess
 
 from ament_index_python.packages import get_package_share_directory
 from lab_simulation import overhead_camera
@@ -41,7 +42,23 @@ from launch_ros.actions import Node
 CONTROLLERS = ('joint_state_broadcaster', 'arm_controller', 'gripper_controller')
 
 
+def refuse_second_simulation():
+    """
+    Raise if a Gazebo server is already running.
+
+    Two simulations share every topic and push the same pieces around, which
+    looks like objects moving on their own. A server can also outlive a
+    launch stopped with Ctrl-C; stop it (./stop-lab.sh && ./start-lab.sh) first.
+    """
+    running = subprocess.run(['pgrep', '-f', 'gz sim'], capture_output=True, text=True)
+    if running.stdout.strip():
+        raise RuntimeError('A Gazebo simulation is already running in this container '
+                           f'(pid {running.stdout.split()[0]}). Stop it first: '
+                           './stop-lab.sh && ./start-lab.sh')
+
+
 def generate_launch_description():
+    refuse_second_simulation()
     pkg_share = get_package_share_directory('lab_simulation')
     world_sdf = os.path.join(pkg_share, 'worlds', 'table_world.sdf')
     xacro_file = os.path.join(pkg_share, 'urdf', 'lab_so101.urdf.xacro')

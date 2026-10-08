@@ -48,6 +48,11 @@ def _stats(values: Sequence[float], keys: Iterable[str]) -> Dict[str, Optional[f
     return out
 
 
+def stats(values: Sequence[float]) -> Dict[str, Optional[float]]:
+    """Return n, mean, median and p95 of values (None when empty)."""
+    return _stats(values, ('mean', 'median', 'p95'))
+
+
 def summarize_task(trials: List[dict]) -> dict:
     """Return the aggregate metrics for the trials of one task."""
     n = len(trials)
@@ -59,7 +64,7 @@ def summarize_task(trials: List[dict]) -> dict:
     cycle = [t['cycle_time_s'] for t in trials if t['success']]
     errors = [t['error_m'] for t in trials if t['error_m'] is not None]
     lo, hi = wilson_interval(successes, n)
-    return {
+    summary = {
         'trials': n,
         'successes': successes,
         'success_rate': successes / n if n else None,
@@ -69,6 +74,12 @@ def summarize_task(trials: List[dict]) -> dict:
         'failures': dict(sorted(failures.items())),
         'disturbed': sum(1 for t in trials if t['disturbed']),
     }
+    observations = [e for t in trials for e in t['details'].get('perception', [])]
+    if observations:
+        from .perception_eval import summarize as summarize_perception
+        latencies = [s for t in trials for s in t['details'].get('perception_latency_s', [])]
+        summary['perception'] = summarize_perception(observations, latencies)
+    return summary
 
 
 def summarize(trials: List[dict], run_info: dict) -> dict:
@@ -93,7 +104,7 @@ def _row(metric, a, b, higher_is_better, significant=None):
 
 # Runs made before these keys were recorded (step 1) used the 3-DOF arm with
 # suction.
-RUN_DEFAULTS = {'robot': 'simple_arm', 'grasp_mode': 'suction'}
+RUN_DEFAULTS = {'robot': 'simple_arm', 'grasp_mode': 'suction', 'perception': 'ground_truth'}
 
 
 def run_setting(summary: dict, key: str):
@@ -104,7 +115,8 @@ def run_setting(summary: dict, key: str):
 def comparability_warnings(a: dict, b: dict) -> List[str]:
     """Return reasons why summaries a and b are not a like-for-like comparison."""
     warnings = []
-    for key, label in (('robot', 'robot'), ('grasp_mode', 'grasp mode')):
+    for key, label in (('robot', 'robot'), ('grasp_mode', 'grasp mode'),
+                       ('perception', 'perception')):
         if run_setting(a, key) != run_setting(b, key):
             warnings.append(f'different {label}: {run_setting(a, key)} vs {run_setting(b, key)}')
     for key, label in (('seed', 'seed'), ('trials_per_task', 'trials per task')):
@@ -161,7 +173,8 @@ def render_report(summary: dict) -> str:
         f" (dirty: {run.get('provenance', {}).get('git_dirty', 'unknown')})",
         f"- Architecture: {run.get('provenance', {}).get('arch', 'unknown')}",
         f"- Robot: {run_setting(summary, 'robot')},"
-        f" grasp mode: {run_setting(summary, 'grasp_mode')}",
+        f" grasp mode: {run_setting(summary, 'grasp_mode')},"
+        f" perception: {run_setting(summary, 'perception')}",
         f"- Seed: {run.get('seed')}, trials per task: {run.get('trials_per_task')}",
         f"- Complete: {run.get('complete')}",
         f"- Real-time factor: {_fmt(run.get('real_time_factor'), 2)},"
@@ -186,6 +199,22 @@ def render_report(summary: dict) -> str:
             f" {ERROR_LABELS.get(task, 'Error (m)')} | {_fmt(s['error_m']['mean'], 4)} |"
             f" {_fmt(s['error_m'].get('median'), 4)} | {_fmt(s['error_m']['p95'], 4)} |"
             f" {s['error_m'].get('n', 'n/a')} | {failures} | {s['disturbed']} |")
+    perception = [(task, s['perception']) for task, s in summary['tasks'].items()
+                  if 'perception' in s]
+    if perception:
+        lines += ['', 'Detection quality (scored against the true piece positions):', '',
+                  '| Task | Observations | Named correctly | Missed | False |'
+                  ' Position error mean / p95 (mm) | Latency mean (ms) |',
+                  '|---|---|---|---|---|---|---|']
+        for task, p in perception:
+            accuracy = 'n/a' if p['naming_accuracy'] is None else \
+                f"{100 * p['naming_accuracy']:.0f}%"
+            lines.append(
+                f"| {task} | {p['observations']} | {p['named_correctly']} ({accuracy}) |"
+                f" {p['missed']} | {p['false']} |"
+                f" {_fmt(p['position_error_mm']['mean'], 1)} /"
+                f" {_fmt(p['position_error_mm']['p95'], 1)} |"
+                f" {_fmt(p['latency_ms']['mean'], 0)} |")
     return '\n'.join(lines) + '\n'
 
 

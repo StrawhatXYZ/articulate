@@ -1,7 +1,14 @@
-"""Piece poses, scene reset, the grasp latch and MoveIt's planning scene."""
+"""
+Piece poses, observing them, scene reset, the grasp latch and MoveIt's planning scene.
+
+In vision mode the robot's view of the pieces comes from the perception
+node's detections; the simulator's true poses are kept for scoring.
+"""
 
 from functools import partial
 import math
+import subprocess
+import time
 from typing import Collection, Dict, Optional, Sequence, Set, Tuple, Union
 
 from geometry_msgs.msg import Pose, PoseStamped
@@ -13,15 +20,22 @@ from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import SetEntityPose
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA, Empty, String
+from vision_msgs.msg import Detection3DArray
 
 from . import layout
-from .ros_util import spin_for, spin_until
-from .tasks import PiecePose
+from .perception_eval import evaluate
+from .ros_util import sim_now, spin_for, spin_until
+from .tasks import Observation, PiecePose, SimulationUnresponsive
 
 # One pose topic per piece, bridged from each piece's PosePublisher.
 POSE_TOPIC = '/lab/pieces/{name}/pose'
 LATCH_TOPIC = '/lab/latch/{name}/{verb}'
 SET_POSE_SERVICE = '/world/table_world/set_pose'
+LIGHT_SERVICE = '/world/table_world/light_config'
+DETECTIONS_TOPIC = '/lab/perception/objects'
+REQUEST_TOPIC = '/lab/perception/request'
+PERCEPTION_MODES = ('ground_truth', 'vision')
+OBSERVE_TIMEOUT_S = 20.0    # simulation seconds to wait for a fresh detection
 SETTLE_SPEED = 0.001    # m/s: below this a piece counts as at rest
 SETTLE_SAMPLE_S = 0.1
 LATCH_ACK_S = 2.0       # simulation seconds to wait for a latch state change
@@ -147,9 +161,19 @@ def planning_scene(poses: Dict[str, Pose], exclude: Names = None,
 class Scene:
     """Read piece poses, reset the layout, latch pieces, sync MoveIt's scene."""
 
-    def __init__(self, node: Node):
+    def __init__(self, node: Node, perception: str = 'ground_truth'):
+        if perception not in PERCEPTION_MODES:
+            raise ValueError(f'perception must be one of {PERCEPTION_MODES}')
         self._node = node
+        self.perception = perception
         self._poses: Dict[str, Pose] = {}
+        # What planning believes: the true poses, or the last observation's.
+        self._planning: Dict[str, Pose] = {}
+        self._detections: Optional[Detection3DArray] = None
+        if perception == 'vision':
+            node.create_subscription(Detection3DArray, DETECTIONS_TOPIC,
+                                     self._on_detections, 10)
+            self._request = node.create_publisher(Empty, REQUEST_TOPIC, 10)
         for name in layout.PIECES:
             node.create_subscription(PoseStamped, POSE_TOPIC.format(name=name),
                                      partial(self._on_pose, name), qos_profile_sensor_data)
@@ -172,6 +196,64 @@ class Scene:
 
     def _on_pose(self, name: str, msg: PoseStamped) -> None:
         self._poses[name] = msg.pose
+
+    def _on_detections(self, msg: Detection3DArray) -> None:
+        self._detections = msg
+
+    def has_detections(self) -> bool:
+        """Return True once perception is listening (always True without vision)."""
+        return self.perception != 'vision' or self._request.get_subscription_count() > 0
+
+    def observe(self, timeout_s: float = OBSERVE_TIMEOUT_S) -> Observation:
+        """
+        Return what the robot believes about the pieces now.
+
+        Ground truth: the simulator's poses. Vision: the detections of the
+        first camera frame taken after this call, so a frame from before the
+        last move is never used. Each label is kept once (best score);
+        unknown objects are ignored. Raises SimulationUnresponsive if no
+        fresh detections arrive.
+        """
+        if self.perception == 'ground_truth':
+            self._planning = dict(self._poses)
+            return Observation({n: self.pose(n) for n in layout.PIECES if n in self._poses},
+                               'ground_truth')
+        from lab_perception.messages import detections_from_msg
+        requested, wall = sim_now(self._node), time.monotonic()
+
+        def fresh() -> bool:
+            stamp = self._detections.header.stamp if self._detections else None
+            return stamp is not None and stamp.sec + stamp.nanosec * 1e-9 > requested
+
+        def answered() -> bool:
+            # Re-asked while waiting: cheap, and immune to a lost request.
+            if not fresh():
+                self._request.publish(Empty())
+                spin_for(self._node, 0.05)
+            return fresh()
+
+        if not spin_until(self._node, answered, sim_timeout_s=timeout_s):
+            raise SimulationUnresponsive(f'no detections for {timeout_s:.0f} s of sim time')
+        detections = detections_from_msg(self._detections)
+        best = {}
+        for d in detections:
+            if d.label in layout.PIECES and (d.label not in best or d.score > best[d.label].score):
+                best[d.label] = d
+        poses = {label: PiecePose(*d.centroid, d.yaw, 0.0) for label, d in best.items()}
+        self._planning = {}
+        for label, d in best.items():
+            pose = Pose()
+            pose.position.x, pose.position.y, pose.position.z = d.centroid
+            pose.orientation.z, pose.orientation.w = math.sin(d.yaw / 2), math.cos(d.yaw / 2)
+            self._planning[label] = pose
+        # Score only pieces on the open table: sorted ones sit in a bin, which
+        # perception masks out by design.
+        truth = {n: (p.position.x, p.position.y) for n, p in self._poses.items()
+                 if not any(b.contains((p.position.x, p.position.y))
+                            for b in layout.BINS.values())}
+        evaluation = evaluate([(d.label, d.centroid[:2]) for d in detections], truth)
+        return Observation(poses, 'vision', evaluation, sim_now(self._node) - requested,
+                           time.monotonic() - wall)
 
     def _on_latch(self, name: str, msg: String) -> None:
         self._latch[name] = msg.data
@@ -226,7 +308,11 @@ class Scene:
     def update_planning_scene(self, exclude: Names = None, held: Optional[str] = None,
                               bins: bool = True) -> bool:
         """Push the current piece poses to MoveIt's planning scene (see planning_scene)."""
-        poses = {name: self._poses.get(name, Pose()) for name in layout.PIECES}
+        # MoveIt sees what the robot believes: in vision mode, pieces it has
+        # not detected are not obstacles. A held piece is placed where it is
+        # believed to be when grasped.
+        source = self._planning if self.perception == 'vision' else self._poses
+        poses = {name: pose for name, pose in source.items() if name in layout.PIECES}
         request = ApplyPlanningScene.Request(
             scene=planning_scene(poses, exclude, held, self._held, self._in_world, bins,
                                  self._bins_in_world))
@@ -239,23 +325,39 @@ class Scene:
         spin_until(self._node, future.done, sim_timeout_s=10.0)
         return future.done() and future.result() is not None and future.result().success
 
-    def _place(self, name: str, x: float, y: float) -> bool:
+    def _place(self, name: str, x: float, y: float, yaw: float = 0.0) -> bool:
         request = SetEntityPose.Request()
         request.entity = Entity(name=name, type=Entity.MODEL)
         request.pose = Pose()
         request.pose.position.x = x
         request.pose.position.y = y
         request.pose.position.z = layout.PIECES[name].centre_z
-        request.pose.orientation.w = 1.0
+        request.pose.orientation.z = math.sin(yaw / 2)
+        request.pose.orientation.w = math.cos(yaw / 2)
         if not self._set_pose.wait_for_service(timeout_sec=5.0):
             return False
         future = self._set_pose.call_async(request)
         spin_until(self._node, future.done, sim_timeout_s=10.0)
         return future.done() and future.result() is not None and future.result().success
 
-    def reset(self, positions: Dict[str, Tuple[float, float]]) -> bool:
+    def set_light(self, direction: Sequence[float], brightness: float) -> bool:
+        """Point the sun and set its brightness (Gazebo light_config service)."""
+        dx, dy, dz = direction
+        request = (f'name: "sun", type: DIRECTIONAL, direction: {{x: {dx}, y: {dy}, z: {dz}}},'
+                   f' diffuse: {{r: {brightness}, g: {brightness}, b: {brightness}, a: 1}},'
+                   f' specular: {{r: 0.2, g: 0.2, b: 0.2, a: 1}}, cast_shadows: true')
+        command = ['gz', 'service', '-s', LIGHT_SERVICE, '--reqtype', 'gz.msgs.Light',
+                   '--reptype', 'gz.msgs.Boolean', '--timeout', '5000', '--req', request]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return 'true' in result.stdout
+
+    def reset(self, positions: Dict[str, Tuple[float, float]],
+              yaws: Optional[Dict[str, float]] = None) -> bool:
         """
-        Teleport every piece to positions, upright, and wait until they rest.
+        Teleport every piece to positions (turned to yaws), upright; wait until they rest.
 
         Teleporting keeps a body's velocity, so a piece knocked into rolling
         arrives still rolling. Rolling does die out through friction, so the
@@ -263,7 +365,7 @@ class Scene:
         """
         for _ in range(RESET_ATTEMPTS):
             for name, (x, y) in positions.items():
-                if not self._place(name, x, y):
+                if not self._place(name, x, y, (yaws or {}).get(name, 0.0)):
                     return False
             if self.wait_settled(RESET_SETTLE_S):
                 return True

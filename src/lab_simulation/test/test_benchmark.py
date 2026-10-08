@@ -103,3 +103,11 @@ def test_grasp_mode_defaults_to_latched_and_is_validated(capsys):
     assert parser.parse_args(['run', '--grasp-mode', 'friction']).grasp_mode == 'friction'
     with pytest.raises(SystemExit):
         parser.parse_args(['run', '--grasp-mode', 'suction'])
+
+
+def test_perception_defaults_to_ground_truth_and_is_validated():
+    parser = benchmark.build_parser()
+    assert parser.parse_args(['run']).perception == 'ground_truth'
+    assert parser.parse_args(['run', '--perception', 'vision']).perception == 'vision'
+    with pytest.raises(SystemExit):
+        parser.parse_args(['run', '--perception', 'lidar'])

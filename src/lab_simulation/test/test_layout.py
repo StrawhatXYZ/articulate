@@ -141,3 +141,16 @@ def test_samples_stay_clear_of_the_bins(seed):
     reach = layout.sample_reach_target(rng, positions)
     for xy in (*positions.values(), target, reach[:2]):
         assert layout.clear_of_bins(xy)
+
+
+def test_yaws_and_light_are_seeded_and_in_range():
+    a, b = random.Random(5), random.Random(5)
+    assert layout.sample_yaws(a) == layout.sample_yaws(b)
+    assert layout.sample_light(a) == layout.sample_light(b)
+    yaws = layout.sample_yaws(random.Random(1))
+    assert sorted(yaws) == sorted(layout.PIECES)
+    assert all(-math.pi <= y < math.pi for y in yaws.values())
+    for seed in range(20):
+        (dx, dy, dz), brightness = layout.sample_light(random.Random(seed))
+        assert dz < 0 and abs(dx) <= 0.8 and abs(dy) <= 0.8
+        assert 0.4 <= brightness <= 1.0

@@ -2,11 +2,12 @@
 """
 Detect and name the pieces on the table from the overhead RGB-D camera.
 
-Subscribes to synchronised colour and depth frames and the camera info, and
-publishes the named objects of each processed frame on /lab/perception/objects
-(vision_msgs/Detection3DArray), stamped with the frame's own time. Frames are
-processed one at a time; frames that arrive meanwhile are skipped, so a
-detection is never older than the newest frame it could have used.
+Subscribes to synchronised colour and depth frames and the camera info. Each
+message on /lab/perception/request (std_msgs/Empty) asks for one detection:
+the first frame taken after the request is processed and its named objects
+are published on /lab/perception/objects (vision_msgs/Detection3DArray),
+stamped with the frame's own time. Between requests no frame is processed,
+so the models do not compete with the simulation for the CPU.
 
 Runs with the /opt/lab-ai interpreter (PyTorch); launch with
 lab_simulation's arm_world.launch.py perception:=true.
@@ -24,9 +25,11 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import Empty
 from vision_msgs.msg import Detection3DArray
 
 TOPIC = '/lab/perception/objects'
+REQUEST_TOPIC = '/lab/perception/request'
 
 
 def image_array(msg: Image) -> np.ndarray:
@@ -60,6 +63,7 @@ class PerceptionNode(Node):
                                      p['min_score'], p['min_margin'])
         self._camera = None
         self._frame = None
+        self._requested = None      # time of the pending request, or None
         self._publisher = self.create_publisher(Detection3DArray, TOPIC, 10)
         self.create_subscription(CameraInfo, '/lab/camera/camera_info', self._on_info, 10)
         sync = message_filters.ApproximateTimeSynchronizer(
@@ -67,6 +71,7 @@ class PerceptionNode(Node):
              message_filters.Subscriber(self, Image, '/lab/camera/depth_image')],
             queue_size=5, slop=0.02)
         sync.registerCallback(self._on_frame)
+        self.create_subscription(Empty, REQUEST_TOPIC, self._on_request, 10)
         self.create_timer(0.02, self._process)
         self.get_logger().info(f'perception ready: {len(self._matcher.labels)} labels, '
                                f"{p['embedder']} embedder")
@@ -78,14 +83,24 @@ class PerceptionNode(Node):
                                                  p['camera_position'], p['camera_yaw'],
                                                  p['camera_pitch'])
 
+    def _on_request(self, _msg: Empty) -> None:
+        # Keep the first pending request: repeats (the client re-asks while
+        # it waits) must not push the deadline for a fresh frame forward.
+        if self._requested is None:
+            self._requested = self.get_clock().now().nanoseconds * 1e-9
+
     def _on_frame(self, rgb: Image, depth: Image) -> None:
         self._frame = (rgb, depth)
 
     def _process(self) -> None:
-        if self._frame is None or self._camera is None:
+        if self._requested is None or self._frame is None or self._camera is None:
             return
         rgb, depth = self._frame
+        stamp = depth.header.stamp.sec + depth.header.stamp.nanosec * 1e-9
+        if stamp <= self._requested:
+            return      # taken before the request: wait for a newer frame
         self._frame = None
+        self._requested = None
         start = time.monotonic()
         p = self._params
         kept, dropped = detect(image_array(rgb), image_array(depth), self._camera,

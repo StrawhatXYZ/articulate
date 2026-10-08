@@ -30,7 +30,9 @@ BIN_RADIUS = 0.20       # bin centres, from the pan axis
 BIN_INNER = 0.09        # inside width: room for the open jaws (~7 cm span)
 BIN_WALL = 0.005        # wall thickness
 BIN_WALL_HEIGHT = 0.02
-BIN_CLEARANCE = 0.10    # pieces and targets stay this far from bin centres
+# Pieces and targets stay this far from bin centres: the open jaws (4.8 cm
+# from their centre) must clear a bin wall (5 cm out).
+BIN_CLEARANCE = 0.12
 
 XY = Tuple[float, float]
 XYZ = Tuple[float, float, float]
@@ -175,6 +177,17 @@ def sample_layout(rng: random.Random, min_separation: float = MIN_SEPARATION,
         else:
             raise RuntimeError(f'could not place {name} after {max_attempts} attempts')
     return positions
+
+
+def sample_yaws(rng: random.Random) -> Dict[str, float]:
+    """Return a seeded random resting yaw for every piece."""
+    return {name: rng.uniform(-math.pi, math.pi) for name in sorted(PIECES)}
+
+
+def sample_light(rng: random.Random) -> Tuple[XYZ, float]:
+    """Return a seeded random sun direction and brightness (0.4-1.0)."""
+    direction = (rng.uniform(-0.8, 0.8), rng.uniform(-0.8, 0.8), -1.0)
+    return direction, rng.uniform(0.4, 1.0)
 
 
 def sample_place_target(rng: random.Random, name: str, positions: Dict[str, XY],

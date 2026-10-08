@@ -141,18 +141,18 @@ def run(args) -> int:
     feedback = JointFeedback(node)
     arm = Arm(node, feedback)
     gripper = Gripper(node, feedback)
-    scene = Scene(node)
+    scene = Scene(node, args.perception)
     kinematics = Kinematics(robot_description())
     try:
         ready = spin_until(
             node, lambda: sim_now(node) > 0 and arm.joint_positions() is not None
-            and gripper.ready() and scene.has_poses(),
+            and gripper.ready() and scene.has_poses() and scene.has_detections(),
             sim_timeout_s=float('inf'), wall_timeout_s=120.0) and arm.wait_for_server()
     except SimulationUnresponsive:
         ready = False
     if not ready:
-        print('simulation not running: no clock, joint states, piece poses or move_group',
-              file=sys.stderr)
+        print('simulation not running: no clock, joint states, piece poses, detections'
+              ' or move_group', file=sys.stderr)
         node.destroy_node()
         rclpy.try_shutdown()
         return EXIT_NO_SIMULATION
@@ -177,7 +177,9 @@ def run(args) -> int:
         home = arm.home()
         if not (home.planned and home.reached):
             return False
-        return scene.reset(layout.sample_layout(rng))
+        positions, yaws = layout.sample_layout(rng), layout.sample_yaws(rng)
+        scene.set_light(*layout.sample_light(rng))
+        return scene.reset(positions, yaws)
 
     run_dir = make_run_dir(Path(args.out), datetime.now())
     wall_start, sim_start = time.monotonic(), sim_now(node)
@@ -186,6 +188,7 @@ def run(args) -> int:
     run_info = {
         'robot': ROBOT,
         'grasp_mode': args.grasp_mode,
+        'perception': args.perception,
         'tasks': [task.name for task in tasks],
         'trials_per_task': args.trials,
         'seed': args.seed,
@@ -217,6 +220,10 @@ def build_parser() -> argparse.ArgumentParser:
         '--grasp-mode', choices=GRASP_MODES, default='latched',
         help='latched: lock a piece once the jaws have closed on it (default);'
              ' friction: hold it by friction alone')
+    run_parser.add_argument(
+        '--perception', choices=('ground_truth', 'vision'), default='ground_truth',
+        help='where the robot learns the piece poses: the simulator (default) or the'
+             ' overhead camera (needs the perception node)')
     run_parser.add_argument(
         '--realtime', nargs='?', const=True, default=False,
         type=lambda value: value.lower() == 'true',

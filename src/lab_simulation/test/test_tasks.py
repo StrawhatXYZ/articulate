@@ -11,8 +11,8 @@ import random
 
 from lab_simulation import layout
 from lab_simulation.tasks import (
-    CARRY_TOLERANCE_M, GRIP_MAX_OFFSET_M, LATCH_EASE_RAD, MoveResult, PickPlaceTask, PiecePose,
-    ReachTask, SortTask, vertical_rotation)
+    CARRY_TOLERANCE_M, GRIP_MAX_OFFSET_M, LATCH_EASE_RAD, MoveResult, Observation,
+    PickPlaceTask, PiecePose, ReachTask, SortTask, vertical_rotation)
 import numpy as np
 import pytest
 
@@ -40,6 +40,11 @@ class FakeWorld:
         self.drop_on_move = None      # move index after which a held piece falls out
         self.miss = False             # piece slides away as the jaws close
         self.held_at = None
+        self.source = 'ground_truth'  # or 'vision'
+        self.seen_offset = (0.0, 0.0)  # vision: detections this far off the truth
+        self.hidden = set()           # vision: pieces the camera does not see
+        self.pressed = PRESSED        # where the jaws push a gripped piece
+        self.observations = 0
         positions = positions or layout.sample_layout(random.Random(1))
         self.pieces = {name: PiecePose(x, y, layout.PIECES[name].centre_z)
                        for name, (x, y) in positions.items()}
@@ -80,8 +85,8 @@ class FakeWorld:
         for name, pose in self.pieces.items():
             local = (np.linalg.inv(tcp) @ np.array([*pose.xyz, 1.0]))[:3]
             if np.linalg.norm(local) < 0.02 and not self.miss:
-                self.held, self.grip_offset = name, PRESSED
-                x, y, z = (tcp @ np.array([*PRESSED, 1.0]))[:3]
+                self.held, self.grip_offset = name, self.pressed
+                x, y, z = (tcp @ np.array([*self.pressed, 1.0]))[:3]
                 self.pieces[name] = PiecePose(x, y, z)
                 self.gripper = STALL
                 return STALL
@@ -99,6 +104,16 @@ class FakeWorld:
     # scene
     def pose(self, name):
         return self.pieces[name]
+
+    def observe(self):
+        self.observations += 1
+        self.time += 0.5
+        dx, dy = self.seen_offset
+        poses = {n: p._replace(x=p.x + dx, y=p.y + dy) for n, p in self.pieces.items()
+                 if n not in self.hidden}
+        evaluation = {'pieces': {}, 'missed': len(self.hidden), 'false': 0} \
+            if self.source == 'vision' else None
+        return Observation(poses, self.source, evaluation, wait_s=0.5, latency_s=0.2)
 
     def latch(self, name):
         self.latch_calls.append(name)
@@ -342,3 +357,85 @@ def test_sort_checks_pieces_at_the_end(world, monkeypatch):
     result = task.run(random.Random(0), 0)
     assert not result.success and result.failure == 'placement_error'
     assert not result.details['pieces']['red_cube']['in_bin']
+
+
+def test_hidden_piece_is_not_found(world):
+    world.source = 'vision'
+    world.hidden = set(layout.PIECES)
+    result = pick_task(world).run(random.Random(0), 0)
+    assert result.failure == 'not_found'
+    assert world.moves == [] and world.latch_calls == []
+    assert result.details['perception'][0]['missed'] == 3
+
+
+def test_vision_plans_from_the_detection_not_the_truth(world):
+    """Detections 6 mm off: the jaws go where the camera says."""
+    world.source = 'vision'
+    world.seen_offset = (0.006, 0.0)
+    result = pick_task(world).run(random.Random(0), 0)
+    truth = result.details['start']
+    grasp = world.kin.forward(world.moves[1])[:3, 3]
+    assert grasp[:2] == pytest.approx([truth[0] + 0.006, truth[1]], abs=5e-4)
+
+
+def test_vision_aims_placement_with_the_nominal_grip(lab_kinematics):
+    """The true grip (12 mm) differs from the nominal one (9 mm) by 3 mm."""
+    results = {}
+    for source in ('ground_truth', 'vision'):
+        world = FakeWorld(lab_kinematics)
+        world.source = source
+        world.pressed = np.array([0.012, 0.0, 0.0])
+        results[source] = pick_task(world).run(random.Random(0), 0)
+    assert results['ground_truth'].error_m < 5e-4
+    assert results['vision'].error_m == pytest.approx(0.003, abs=5e-4)
+
+
+def test_observations_are_recorded_only_in_vision_mode(world):
+    assert 'perception' not in pick_task(world).run(random.Random(0), 0).details
+    world.__init__(world.kin)
+    world.source = 'vision'
+    details = pick_task(world).run(random.Random(0), 0).details
+    assert len(details['perception']) == 1 and details['perception_latency_s'] == [0.2]
+
+
+def test_sort_looks_before_every_pick_and_skips_unseen_pieces(world):
+    world.source = 'vision'
+    world.hidden = {'green_block'}
+    result = sort_task(world).run(random.Random(0), 0)
+    assert world.observations == len(layout.PIECES)
+    assert result.failure == 'not_found' and not result.success
+    pieces = result.details['pieces']
+    assert pieces['green_block']['failure'] == 'not_found'
+    assert all(pieces[n]['in_bin'] for n in ('blue_cylinder', 'red_cube'))
+    assert len(result.details['perception']) == len(layout.PIECES)
+
+
+def test_sort_cycle_time_excludes_waiting_for_the_camera(world):
+    result = sort_task(world).run(random.Random(0), 0)
+    moves = len(world.moves)
+    assert result.cycle_time_s == pytest.approx(moves * 1.0)
+
+
+@pytest.mark.parametrize('seed', range(6))
+def test_sort_centres_the_jaws_on_the_bin_whatever_the_wrist_does(lab_kinematics, seed):
+    """Random piece yaws make the IK pick either wrist half turn; the jaws stay centred."""
+    world = FakeWorld(lab_kinematics, layout.sample_layout(random.Random(seed)))
+    rng = random.Random(seed)
+    for name, yaw in layout.sample_yaws(rng).items():
+        world.pieces[name] = world.pieces[name]._replace(yaw=yaw)
+    places = []
+    real = world.move_to
+
+    def record(q):
+        if world.held is not None and len(places) < 10:
+            places.append((world.held, tuple(q)))
+        return real(q)
+    world.move_to = record
+    result = sort_task(world).run(rng, 0)
+    assert result.success, result
+    for name in layout.PIECES:
+        # The lowest carried pose of each piece is its place pose.
+        poses = [q for held, q in places if held == name]
+        place = min(poses, key=lambda q: world.kin.forward(q)[2, 3])
+        jaws = world.kin.forward(place)[:3, 3]
+        assert math.dist(jaws[:2], layout.BINS[name].xy) < 1e-3

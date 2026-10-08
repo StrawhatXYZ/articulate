@@ -129,7 +129,8 @@ def test_compare_warns_across_robots_and_grasp_modes():
 
 def test_report_states_robot_and_grasp_mode():
     summary = metrics.summarize([trial()], {'robot': 'so101', 'grasp_mode': 'latched'})
-    assert '- Robot: so101, grasp mode: latched' in metrics.render_report(summary)
+    assert '- Robot: so101, grasp mode: latched, perception: ground_truth' in \
+        metrics.render_report(summary)
 
 
 def test_throughput_is_not_compared_across_different_task_sets():
@@ -139,3 +140,21 @@ def test_throughput_is_not_compared_across_different_task_sets():
     rows = [r['metric'] for r in metrics.compare(a, b)]
     assert 'trials per minute' not in rows
     assert any('task set' in w for w in metrics.comparability_warnings(a, b))
+
+
+def test_detection_quality_is_summarised_and_reported():
+    from lab_simulation.perception_eval import evaluate
+    seen = evaluate([('red_cube', (0.2, 0.0))], {'red_cube': (0.2, 0.0), 'blue': (0.1, 0.1)})
+    t = trial()
+    t['details'] = {'perception': [seen], 'perception_latency_s': [0.4]}
+    summary = metrics.summarize([t], {'perception': 'vision'})
+    p = summary['tasks']['reach']['perception']
+    assert p['named_correctly'] == 1 and p['missed'] == 1
+    report = metrics.render_report(summary)
+    assert 'Detection quality' in report and 'perception: vision' in report
+
+
+def test_compare_warns_across_perception_modes():
+    a, b = summary_with(90, seed=42), summary_with(80, seed=42)
+    b['run']['perception'] = 'vision'
+    assert 'different perception: ground_truth vs vision' in metrics.comparability_warnings(a, b)

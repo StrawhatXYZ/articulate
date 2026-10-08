@@ -5,6 +5,11 @@ Pure Python (no ROS). Tasks drive the robot through small interfaces
 (arm.Arm, gripper.Gripper and scene.Scene implement them; the tests use
 fakes) and use so101_kinematics for goals. All times are simulation seconds.
 
+Tasks plan from scene.observe(): the simulator's poses in ground-truth
+mode, the camera's detections in vision mode. Scoring always uses the true
+poses (scene.pose), and so do the simulation's referee checks (the grasp
+gate below, drop detection), which decide nothing about where to move.
+
 A grasp counts only if the jaws really closed on the piece: the gripper
 stalled open (something is between the jaws) and the piece sits between
 them. In the default "latched" grasp mode the piece is then locked to the
@@ -54,6 +59,10 @@ LATCH_SETTLE_S = 0.3
 # the piece is shortened to match, so the jaw does not brush it over.
 BIN_RELEASE_RAD = 0.5
 BIN_RELEASE_CLEARANCE_M = 0.005
+# Where a gripped piece sits in the grasp frame: pressed ~9 mm against the
+# fixed jaw. In vision mode placements are aimed with this, not with the
+# measured grip, which only the simulator knows.
+NOMINAL_GRIP = np.array([0.009, 0.0, 0.0])
 # After release, slide the jaws this far along the closing axis, moving the
 # fixed jaw off the piece, before lifting: the gripped piece was pressed
 # against the fixed jaw (grasp frame +x), and lifting straight up would drag
@@ -74,6 +83,27 @@ class MoveResult(NamedTuple):
     reached: bool
     duration_s: float
     max_error: float
+
+
+class Observation(NamedTuple):
+    """What the robot believes about the pieces at one moment."""
+
+    poses: Dict[str, 'PiecePose']   # pieces seen, by label
+    source: str                     # 'ground_truth' or 'vision'
+    evaluation: Optional[dict] = None   # vision only: scored against the truth
+    wait_s: float = 0.0             # simulation seconds spent waiting for it
+    latency_s: float = 0.0          # wall seconds spent waiting for it
+
+    @property
+    def vision(self) -> bool:
+        return self.source == 'vision'
+
+
+def record_observation(observation: Observation, details: dict) -> None:
+    """Add an observation's detection scores to a trial's details."""
+    if observation.evaluation is not None:
+        details.setdefault('perception', []).append(observation.evaluation)
+        details.setdefault('perception_latency_s', []).append(observation.latency_s)
 
 
 class PiecePose(NamedTuple):
@@ -140,9 +170,11 @@ class ReachTask:
 
     def run(self, rng: random.Random, index: int) -> TrialResult:
         """Run one reach trial."""
-        positions = {n: self._scene.pose(n).xy for n in sorted(layout.PIECES)}
+        observation = self._scene.observe()
+        positions = {n: p.xy for n, p in sorted(observation.poses.items())}
         target = layout.sample_reach_target(rng, positions)
         details = {'target': list(target)}
+        record_observation(observation, details)
         start = self._now()
         try:
             q = self._kin.inverse(target, None)
@@ -181,13 +213,19 @@ class PickPlaceTask:
     def run(self, rng: random.Random, index: int) -> TrialResult:
         """Run one pick-and-place trial from the current scene."""
         names = sorted(layout.PIECES)
-        start = {name: self._scene.pose(name) for name in names}
+        start = {name: self._scene.pose(name) for name in names}     # for scoring
+        observation = self._scene.observe()
+        seen = observation.poses
         name = rng.choice(names)
-        target = layout.sample_place_target(rng, name, {n: p.xy for n, p in start.items()})
+        target = layout.sample_place_target(rng, name, {n: p.xy for n, p in seen.items()})
         details = {'piece': name, 'start': list(start[name].xyz), 'target': list(target)}
+        record_observation(observation, details)
+        if name not in seen:
+            return TrialResult(self.name, index, False, 'not_found', 0.0, details=details)
         t0 = self._now()
         try:
-            failure = self._execute(layout.PIECES[name], start[name], target, details)
+            failure = self._execute(layout.PIECES[name], seen[name], target, details,
+                                    nominal_grip=observation.vision)
         finally:
             self._scene.unlatch(name)
             self._gripper.release()
@@ -256,7 +294,7 @@ class PickPlaceTask:
         return q
 
     def _execute(self, piece, start: PiecePose, target, details: dict,
-                 aim_jaws: bool = False) -> Optional[str]:
+                 aim_jaws: bool = False, nominal_grip: bool = False) -> Optional[str]:
         """
         Pick piece from start and set it down at target (xy); return a failure or None.
 
@@ -264,8 +302,10 @@ class PickPlaceTask:
         target: the piece is gripped off-centre (pressed against the fixed
         jaw), and centring the jaws keeps them clear of a bin's walls.
         """
+        # details['stage'] records how far the pick got, for failure analysis.
         # Approach: hover over the piece with the jaws across its narrow side,
         # then descend around it. The piece itself is not an obstacle.
+        details['stage'] = 'approach'
         yaws = piece.closing_yaws(start.yaw)
         grasp_xyz = (start.x, start.y, start.z)
         try:
@@ -283,6 +323,7 @@ class PickPlaceTask:
                 return failure
 
         # Close, and accept the grasp only if the jaws closed on this piece.
+        details['stage'] = 'grasp'
         stalled_at = self._gripper.grip()
         if stalled_at is None:
             return 'timeout'
@@ -296,23 +337,31 @@ class PickPlaceTask:
             self._scene.wait_settled(LATCH_SETTLE_S)
             if not self._scene.latch(piece.name):
                 return 'timeout'
-        grip = self._grip_offset(piece.name)
+        measured_grip = self._grip_offset(piece.name)     # referee only
+        grip = NOMINAL_GRIP if nominal_grip else measured_grip
         self._scene.update_planning_scene(held=piece.name)
 
         # Carry: lift, move over the target, lower until the piece just
         # clears the table.
+        details['stage'] = 'carry'
         held_yaw = self._kin.grasp_yaw(self._arm.joint_positions())
-        if aim_jaws:
-            offset = (vertical_rotation(held_yaw) @ grip)[:2]
-            target = (target[0] + offset[0], target[1] + offset[1])
         place_xyz = (target[0], target[1], piece.centre_z + PLACE_CLEARANCE_M)
         try:
             q_lift, _ = self._solve(
                 (start.x, start.y, start.z + layout.LIFT), [held_yaw], self._arm.joint_positions())
-            q_place = self._tcp_for_piece(place_xyz, grip, held_yaw, q_lift)
-            q_above = self._tcp_for_piece(
-                (place_xyz[0], place_xyz[1], place_xyz[2] + layout.LIFT), grip,
-                self._kin.grasp_yaw(q_place), q_place)
+            if aim_jaws:
+                # Centre the jaws (grasp_link) on target; the piece lands
+                # beside it, offset by the grip. Solved for the jaws directly,
+                # so a half turn of the wrist in the IK cannot move them.
+                jaws_z = place_xyz[2] + grip[2]
+                q_place = self._kin.inverse((target[0], target[1], jaws_z), held_yaw, q_lift)
+                q_above = self._kin.inverse((target[0], target[1], jaws_z + layout.LIFT),
+                                            self._kin.grasp_yaw(q_place), q_place)
+            else:
+                q_place = self._tcp_for_piece(place_xyz, grip, held_yaw, q_lift)
+                q_above = self._tcp_for_piece(
+                    (place_xyz[0], place_xyz[1], place_xyz[2] + layout.LIFT), grip,
+                    self._kin.grasp_yaw(q_place), q_place)
         except Unreachable:
             return 'unreachable'
         details['carry_deviation_m'] = 0.0
@@ -320,13 +369,14 @@ class PickPlaceTask:
             failure = self._move(q)
             if failure:
                 return failure
-            if not self._carrying(piece.name, grip, details):
+            if not self._carrying(piece.name, measured_grip, details):
                 return 'dropped'
 
         # Release and retreat; the placed piece is not an obstacle while the
         # open jaws leave it. A latched piece stays put while the jaws open,
         # then drops the last few millimetres straight down: unlatching
         # first would let the opening jaw brush it over.
+        details['stage'] = 'release'
         opened = self._gripper.release(BIN_RELEASE_RAD) if aim_jaws else self._gripper.release()
         self._scene.unlatch(piece.name)
         if not opened:
@@ -343,11 +393,13 @@ class PickPlaceTask:
                                           q_clear)
         except Unreachable:
             return 'unreachable'
+        details['stage'] = 'retreat'
         for q in (q_clear, q_retreat):
             failure = self._move(q)
             if failure:
                 return failure
         self._scene.update_planning_scene()
+        details['stage'] = 'home'
         home = self._arm.home()
         return _move_failure(home)
 
@@ -374,25 +426,37 @@ class SortTask:
         piece rests upright inside its own bin.
         """
         names = sorted(layout.PIECES)
-        start = {name: self._scene.pose(name) for name in names}
+        start = {name: self._scene.pose(name) for name in names}     # for scoring
         pieces: Dict[str, dict] = {}
+        trial_details: Dict = {'pieces': pieces}
         failure = None
+        waited = 0.0
         t0 = self._now()
         for name in names:
             bin_ = layout.BINS[name]
             details = {'bin': bin_.name, 'start': list(start[name].xyz)}
+            pieces[name] = details
+            # Look again before every pick: earlier picks may have moved things.
+            observation = self._scene.observe()
+            waited += observation.wait_s
+            record_observation(observation, trial_details)
+            if name not in observation.poses:
+                details['failure'] = 'not_found'
+                failure = failure or 'not_found'
+                continue
             try:
                 piece_failure = self._pick._execute(
-                    layout.PIECES[name], start[name], bin_.xy, details, aim_jaws=True)
+                    layout.PIECES[name], observation.poses[name], bin_.xy, details,
+                    aim_jaws=True, nominal_grip=observation.vision)
             finally:
                 # A failed pick may have stopped inside the bin: open partly.
                 self._scene.unlatch(name)
                 self._gripper.release(BIN_RELEASE_RAD)
                 self._scene.update_planning_scene()
             details['failure'] = piece_failure
-            pieces[name] = details
             failure = failure or piece_failure
-        elapsed = self._now() - t0
+        # Time spent waiting for the camera is reported as perception latency.
+        elapsed = self._now() - t0 - waited
         self._scene.wait_settled()
         errors = []
         for name in names:
@@ -413,4 +477,4 @@ class SortTask:
         if ok:
             failure = None
         return TrialResult(self.name, index, ok, failure, elapsed,
-                           max(errors) if errors else None, details={'pieces': pieces})
+                           max(errors) if errors else None, details=trial_details)

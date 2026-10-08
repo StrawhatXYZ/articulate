@@ -4,6 +4,7 @@
 #   ./run-benchmark.sh                          # all tasks, 100 trials each, seed 42
 #   TASK=pick_place TRIALS=10 ./run-benchmark.sh
 #   TASK=pick_place GRASP_MODE=friction ./run-benchmark.sh   # no grasp latch
+#   TASK=sort PERCEPTION=vision ./run-benchmark.sh           # plan from the camera
 #
 # Stop any interactive simulation first: two simulations would share topics.
 set -euo pipefail
@@ -15,6 +16,7 @@ TASK="${TASK:-all}"
 TRIALS="${TRIALS:-100}"
 SEED="${SEED:-42}"
 GRASP_MODE="${GRASP_MODE:-latched}"
+PERCEPTION="${PERCEPTION:-ground_truth}"
 
 if docker exec "${CONTAINER}" pgrep -f "gz sim" > /dev/null; then
     echo "A simulation is already running in ${CONTAINER}. Stop it first." >&2
@@ -33,7 +35,7 @@ if [ -z "$(git status --porcelain 2>/dev/null)" ]; then dirty=false; else dirty=
 # shellcheck disable=SC2016  # expanded inside the container, not here
 docker exec \
     -e LAB_GIT_COMMIT="${commit}" -e LAB_GIT_DIRTY="${dirty}" \
-    -e TASK="${TASK}" -e TRIALS="${TRIALS}" -e SEED="${SEED}" -e GRASP_MODE="${GRASP_MODE}" \
+    -e TASK="${TASK}" -e TRIALS="${TRIALS}" -e SEED="${SEED}" -e GRASP_MODE="${GRASP_MODE}" -e PERCEPTION="${PERCEPTION}" \
     "${CONTAINER}" bash -c '
 source /opt/ros/jazzy/setup.bash
 cd /workspace
@@ -44,5 +46,5 @@ if ! colcon build --symlink-install > /tmp/lab-build.log 2>&1; then
 fi
 source install/setup.bash
 ros2 launch lab_simulation benchmark.launch.py \
-    task:="${TASK}" trials:="${TRIALS}" seed:="${SEED}" grasp_mode:="${GRASP_MODE}" \
+    task:="${TASK}" trials:="${TRIALS}" seed:="${SEED}" grasp_mode:="${GRASP_MODE}" perception:="${PERCEPTION}" \
     out:=/workspace/results'
