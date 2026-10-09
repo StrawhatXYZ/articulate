@@ -41,6 +41,7 @@ class Verdict(NamedTuple):
     message: str = ''
     source: str = ''                            # who refused: 'model' or 'check'
     final: Dict[str, object] = {}               # dry-run end state: 'box', (x, y) or None
+    skipped: Tuple[str, ...] = ()               # steps left out as already done, and why
 
 
 class _Refusal(Exception):
@@ -91,8 +92,9 @@ def _steps_from(call: ToolCall, states: Dict[str, PieceState]):
     if call.name == 'go_home':
         return [Step('home')]
     if call.name == 'sort_all':
+        # Pieces already in their bins become no-ops the dry run explains.
         return [Step('move', n, {'kind': 'bin'}) for n in sorted(states)
-                if states[n].status == TABLE]
+                if states[n].status in (TABLE, BOX)]
     if call.name == 'swap_pieces':
         return [('swap', _piece(_text(a, 'piece_a')), _piece(_text(a, 'piece_b')))]
     piece = _piece(_text(a, 'piece'))
@@ -148,12 +150,13 @@ def _dry_run(raw, states) -> Verdict:
     location: Dict[str, object] = {n: ('box' if s.status == BOX else positions.get(n))
                                    for n, s in states.items()}
     starts = {n: s.start_xy for n, s in states.items() if s.start_xy is not None}
-    steps = []
+    steps, skipped = [], []
 
     def move(piece, target, index):
         if location[piece] is None:
             raise _Refusal(f'step {index}: {piece} is not visible')
         if target['kind'] == 'bin' and location[piece] == 'box':
+            skipped.append(f'{piece} is already in its box')
             return
         xy, note = targets.resolve(target, piece, positions, starts)
         if xy is None:
@@ -190,4 +193,4 @@ def _dry_run(raw, states) -> Verdict:
             move(a, {'kind': 'xy', 'xy': xb}, index)
         if len(steps) > MAX_STEPS:
             raise _Refusal(f'more than {MAX_STEPS} steps')
-    return Verdict('plan', tuple(steps), final=dict(location))
+    return Verdict('plan', tuple(steps), final=dict(location), skipped=tuple(skipped))

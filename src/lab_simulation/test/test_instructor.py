@@ -75,3 +75,16 @@ def test_second_run_is_rejected_while_busy():
     assert instructor.try_begin() and not instructor.try_begin()
     instructor.end()
     assert instructor.try_begin()
+
+
+def test_nothing_to_do_explains_itself():
+    boxed = {n: s._replace(status='box') for n, s in STATES.items()}
+
+    class Boxed(FakeExecutor):
+        def observe(self):
+            return boxed, Observation({}, 'vision')
+
+    move = ToolCall('move_piece', {'piece': 'red_cube', 'target': 'bin'})
+    r, ex, _ = run(FakePlanner(reply(move)), Boxed())
+    assert r.outcome == 'done' and ex.ran == []
+    assert r.message == 'Nothing to do: red_cube is already in its box.'

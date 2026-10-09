@@ -107,3 +107,10 @@ def test_random_junk_never_raises():
         assert verdict.kind in ('plan', 'refuse', 'answer')
         for step in verdict.steps:
             assert step.action in ('move', 'home')
+
+
+def test_a_plan_with_nothing_left_to_do_says_why():
+    v = check([call('sort_all')], states(red_cube=BOX, blue_cylinder=BOX, green_block=BOX))
+    assert v.kind == 'plan' and v.steps == ()
+    assert v.skipped == ('blue_cylinder is already in its box',
+                         'green_block is already in its box', 'red_cube is already in its box')

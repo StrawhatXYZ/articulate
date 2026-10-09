@@ -90,6 +90,7 @@ class Instructor:
         steps = [describe_step(s) for s in verdict.steps]
         feedback('plan', f'{len(steps)} steps: ' + '; '.join(steps))
         if not verdict.steps:
-            return InstructResult('done', 'Nothing to do.', [], record)
+            why = '; '.join(verdict.skipped) or 'everything is already where that would put it'
+            return InstructResult('done', f'Nothing to do: {why}.', [], record)
         outcome, message = self._executor.run(verdict.steps, feedback, cancelled)
         return InstructResult(outcome, message, steps, record)
