@@ -78,3 +78,29 @@ def test_xy_inside_a_bin_is_moved_clear_of_it():
 def test_unknown_kind_is_refused():
     xy, reason = _resolve('red_cube', {'kind': 'sideways'})
     assert xy is None and reason
+
+
+def test_a_blocked_side_is_refused_not_moved_elsewhere():
+    # Left of the blue cylinder is where the red cube is: no spot on that side.
+    positions = {'red_cube': (0.20, -0.01), 'blue_cylinder': (0.20, -0.10),
+                 'green_block': (0.05, -0.19)}
+    xy, reason = targets.resolve({'kind': 'near', 'piece': 'blue_cylinder', 'side': 'left'},
+                                 'green_block', positions, STARTS)
+    assert xy is None and 'no free spot left of blue_cylinder' in reason
+
+
+def test_near_with_a_side_moves_only_along_that_side():
+    for side in targets.SIDES:
+        xy, _ = _resolve('green_block', {'kind': 'near', 'piece': 'red_cube', 'side': side})
+        if xy is not None:
+            assert targets.beside(xy, POSITIONS['red_cube'], side)
+
+
+def test_near_without_a_side_is_refused_when_nothing_free_is_close():
+    crowded = {'red_cube': (0.12, -0.15), 'blue_cylinder': (0.20, -0.08),
+               'green_block': (0.05, -0.19)}
+    xy, reason = targets.resolve({'kind': 'near', 'piece': 'red_cube', 'side': None},
+                                 'green_block', crowded, STARTS)
+    assert xy is None or targets.beside(xy, crowded['red_cube'], None)
+    if xy is None:
+        assert 'no free spot next to red_cube' in reason

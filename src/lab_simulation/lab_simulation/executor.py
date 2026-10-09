@@ -14,6 +14,8 @@ from lab_simulation.plan_check import describe_step, Step
 from lab_simulation.tasks import BIN_RELEASE_RAD, Observation, PiecePose
 
 Feedback = Callable[[str, str], None]
+# Pick stages at which the piece has been lifted from where it was.
+LIFTED_STAGES = ('carry', 'release', 'retreat', 'home')
 
 
 class Executor:
@@ -76,8 +78,11 @@ class Executor:
             self._scene.unlatch(step.piece)
             self._gripper.release(BIN_RELEASE_RAD)
             self._scene.update_planning_scene()
-        if failure is None and to_bin and 'placed' in details:
+        if to_bin and 'placed' in details:
+            # Put in its bin (even if going home afterwards failed).
             self.memory.placed_in_box(step.piece, PiecePose(*details['placed']))
-        elif details.get('stage') != 'approach' or failure is None:
+        elif failure is None or details.get('stage') in LIFTED_STAGES:
             self.memory.moved(step.piece)          # picked up: the camera will find it
+        # Otherwise the piece never left where it was (a missed grasp, say):
+        # memory keeps it, so a piece in its bin is not lost to the masked camera.
         return f'{failure} (stage {details.get("stage")})' if failure else ''

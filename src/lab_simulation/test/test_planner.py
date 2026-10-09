@@ -40,6 +40,9 @@ class Fake:
                 if reply == 'hang':
                     threading.Event().wait(2.0)
                     return
+                if reply == 'drop':                  # the server dies mid-request
+                    self.close_connection = True
+                    return
                 body = json.dumps({'message': reply}).encode()
                 self.send_response(200)
                 self.end_headers()
@@ -98,3 +101,9 @@ def test_check_ready_reports_a_missing_model():
     fake = Fake([])
     assert Planner(fake.url).check_ready() is None
     assert 'pull' in Planner(fake.url, model='other:1b').check_ready()
+
+
+def test_a_server_dying_mid_request_is_unavailable_not_a_crash():
+    fake = Fake(['drop'])
+    reply = Planner(fake.url).plan('go home', STATES)
+    assert reply.error == 'unavailable'

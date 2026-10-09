@@ -20,8 +20,6 @@ from lab_simulation.plan_check import check
 START_TOLERANCE_M = 0.03
 AT_TOLERANCE_M = 0.03
 UNMOVED_M = 0.01
-NEAR_SLACK_M = 0.04       # around targets.NEAR_GAP
-SIDE_COSINE = 0.7
 
 Where = Dict[str, object]
 
@@ -32,15 +30,16 @@ def _moved(a, b) -> bool:
     return math.dist(a, b) > UNMOVED_M
 
 
-def _near(xy, other_xy, side) -> bool:
-    offset = (xy[0] - other_xy[0], xy[1] - other_xy[1])
-    length = math.hypot(*offset)
-    if abs(length - targets.NEAR_GAP) > NEAR_SLACK_M:
-        return False
-    if side is None:
-        return True
-    d = targets.SIDES[side]
-    return offset[0] * d[0] + offset[1] * d[1] >= SIDE_COSINE * length
+def infeasible(expected, outcome: str, refused_by: str, message: str) -> bool:
+    """
+    Return True if a valid instruction was refused because the table has no room.
+
+    The check refuses a correct plan when the crowded free strip has no spot
+    for it (for instance, the other piece's left is taken). That is the
+    table's limit, not a planning mistake, so it is reported separately.
+    """
+    moving = isinstance(expected, dict) or expected == HOME
+    return moving and outcome == 'refused' and refused_by == 'check' and 'no free' in message
 
 
 def _place_ok(want, name: str, before: Where, after: Where, starts) -> Tuple[bool, str]:
@@ -60,7 +59,7 @@ def _place_ok(want, name: str, before: Where, after: Where, starts) -> Tuple[boo
                 f'{name} not where {want[1]} was')
     if kind == 'near':
         other = after.get(want[1])
-        return (isinstance(other, tuple) and _near(got, other, want[2]),
+        return (isinstance(other, tuple) and targets.beside(got, other, want[2]),
                 f'{name} not {want[2] or "next to"} {want[1]}')
     return False, f'unknown expectation {want}'
 
@@ -129,7 +128,10 @@ def evaluate(planner, cases: Sequence[Case], set_name: str = 'test',
                      'scene': case.scene, 'ok': ok, 'why': '' if ok else why,
                      'outcome': outcome, 'message': message, 'seconds': reply.seconds,
                      'calls': [[c.name, c.args] for c in reply.calls],
-                     'refused_by': verdict.source if verdict else ''})
+                     'refused_by': verdict.source if verdict else '',
+                     'infeasible': not ok and infeasible(case.expected, outcome,
+                                                         verdict.source if verdict else '',
+                                                         message)})
         on_row(rows[-1])
     return rows
 
@@ -148,6 +150,8 @@ def summarize(rows: List[dict]) -> dict:
         seconds = [r['seconds'] for r in part]
         summary[set_name] = dict(
             _rate(part),
+            infeasible=sum(r['infeasible'] for r in part),
+            feasible=_rate([r for r in part if not r['infeasible']]),
             by_category={c: _rate([r for r in part if r['category'] == c])
                          for c in sorted({r['category'] for r in part})},
             seconds={'median': statistics.median(seconds), 'p95': percentile(seconds, 95),
@@ -158,6 +162,8 @@ def summarize(rows: List[dict]) -> dict:
 
 
 def _pct(rate: Optional[dict]) -> str:
+    if not rate or not rate['n']:
+        return '0/0'
     return (f"{rate['successes']}/{rate['n']} ({100 * rate['rate']:.0f}%, "
             f"95% CI {100 * rate['ci95'][0]:.0f}-{100 * rate['ci95'][1]:.0f}%)")
 
@@ -169,6 +175,8 @@ def render_report(summary: dict, rows: List[dict], info: dict) -> str:
              "Scored on the safety check's dry run of each plan.", '']
     for set_name, s in summary.items():
         lines += [f'## {set_name}', '', f'Success: {_pct(s)}', '',
+                  f"Infeasible (correct plan, no room on the table): {s['infeasible']}; "
+                  f"success on the rest: {_pct(s['feasible'])}", '',
                   f"Latency: median {s['seconds']['median']:.1f} s, "
                   f"p95 {s['seconds']['p95']:.1f} s, max {s['seconds']['max']:.1f} s", '',
                   '| Category | Success |', '|---|---|']

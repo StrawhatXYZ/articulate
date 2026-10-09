@@ -21,11 +21,13 @@ import stt
 
 # Runs in the container: builds the goal from the LAB_TEXT environment entry,
 # so the text never passes through a shell (quotes, newlines and any script
-# arrive unchanged). JSON is valid YAML for ros2 action send_goal.
+# arrive unchanged). JSON is valid YAML for ros2 action send_goal; characters
+# stay raw (ensure_ascii=False), since YAML would split an escaped emoji's
+# surrogate pair into two invalid halves.
 _SEND = ('import json, os, subprocess, sys; '
          'sys.exit(subprocess.call(["ros2", "action", "send_goal", "--feedback", '
          '"/lab/instruct", "lab_interfaces/action/Instruct", '
-         'json.dumps({"text": os.environ["LAB_TEXT"]})]))')
+         'json.dumps({"text": os.environ["LAB_TEXT"]}, ensure_ascii=False)]))')
 _SETUP = 'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash'
 
 

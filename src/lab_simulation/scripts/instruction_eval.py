@@ -54,22 +54,23 @@ def main(argv=None) -> int:
         return 2
     sets = {'dev': instruction_cases.DEV, 'test': instruction_cases.TEST}
     chosen = sets if args.set == 'all' else {args.set: sets[args.set]}
+    now = datetime.now()
+    out = Path(args.out) / f'{now:%Y%m%d-%H%M%S}-planner'
+    out.mkdir(parents=True)
+    rows_file = open(out / 'rows.jsonl', 'w')       # written as each case is scored
 
     def show(row):
+        rows_file.write(json.dumps(row, ensure_ascii=False, default=str) + '\n')
+        rows_file.flush()
         print(f"{'ok  ' if row['ok'] else 'FAIL'} {row['seconds']:5.1f}s [{row['set']}] "
               f"{row['text'][:60]}" + ('' if row['ok'] else f"  -- {row['why']}"), flush=True)
 
     rows = []
-    for name, cases in chosen.items():
-        rows += evaluate(planner, cases, name, on_row=show)
-    now = datetime.now()
+    with rows_file:
+        for name, cases in chosen.items():
+            rows += evaluate(planner, cases, name, on_row=show)
     info = {'model': args.model, 'url': args.url, 'date': now.isoformat(timespec='seconds'),
             **model_info(args.url, args.model)}
-    out = Path(args.out) / f'{now:%Y%m%d-%H%M%S}-planner'
-    out.mkdir(parents=True)
-    with open(out / 'rows.jsonl', 'w') as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False, default=str) + '\n')
     summary = summarize(rows)
     (out / 'summary.json').write_text(json.dumps({'info': info, 'summary': summary}, indent=1))
     (out / 'report.md').write_text(render_report(summary, rows, info))

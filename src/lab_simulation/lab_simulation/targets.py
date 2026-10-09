@@ -14,7 +14,9 @@ from lab_simulation import layout
 
 XY = Tuple[float, float]
 EDGE_MARGIN = 0.005
-NEAR_GAP = layout.MIN_SEPARATION + 0.01
+NEAR_GAP = layout.MIN_SEPARATION + 0.01   # centre to centre, "next to"
+NEAR_SLACK = 0.04        # a spot within this of NEAR_GAP still counts as next to
+SIDE_COSINE = 0.7        # and on a side if its direction is within ~45 degrees
 GRID_STEP = 0.005
 # Unit directions, world frame, as the robot sees them: front = away (+x).
 SIDES: Dict[str, XY] = {'left': (0.0, 1.0), 'right': (0.0, -1.0),
@@ -32,6 +34,31 @@ def is_valid(xy: Sequence[float], others: Sequence[Sequence[float]]) -> bool:
             and layout.FREE_BEARINGS[0] <= bearing <= layout.FREE_BEARINGS[1]
             and layout.clear_of_bins(xy)
             and all(math.dist(xy, other) >= layout.MIN_SEPARATION for other in others))
+
+
+def beside(xy: Sequence[float], other: Sequence[float], side: Optional[str]) -> bool:
+    """Return True if xy is next to other (on side, if one is given)."""
+    offset = (xy[0] - other[0], xy[1] - other[1])
+    length = math.hypot(*offset)
+    if abs(length - NEAR_GAP) > NEAR_SLACK:
+        return False
+    if side is None:
+        return True
+    d = SIDES[side]
+    return offset[0] * d[0] + offset[1] * d[1] >= SIDE_COSINE * length
+
+
+def _beside_spot(other_xy, side, others) -> Optional[XY]:
+    """Return the valid spot beside other_xy (on side, if given) closest to the ideal one."""
+    d = SIDES.get(side, (0.0, 0.0))
+    ideal = (other_xy[0] + NEAR_GAP * d[0], other_xy[1] + NEAR_GAP * d[1])
+    best, best_distance = None, math.inf
+    for xy in _grid():
+        distance = math.dist(xy, ideal) if side else abs(math.dist(xy, other_xy) - NEAR_GAP)
+        if (distance < best_distance and beside(xy, other_xy, side)
+                and is_valid(xy, others)):
+            best, best_distance = xy, distance
+    return best
 
 
 def _grid():
@@ -81,16 +108,17 @@ def resolve(target: dict, piece: str, positions: Dict[str, XY],
         if desired is None:
             return None, f'no start position known for {piece}'
     elif kind == 'near':
+        # Only a spot that really is beside the other piece (on the side
+        # asked for) will do: never a "nearest free spot" somewhere else.
         other, side = target.get('piece'), target.get('side')
         if other not in positions or other == piece:
             return None, f'cannot place {piece} near {other}'
-        if side is None:
-            xy = nearest_valid(positions[other], others)
-            return (xy, 'near') if xy else (None, f'no free spot near {other}')
-        if side not in SIDES:
+        if side is not None and side not in SIDES:
             return None, f'unknown side {side}'
-        d = SIDES[side]
-        desired = (positions[other][0] + NEAR_GAP * d[0], positions[other][1] + NEAR_GAP * d[1])
+        xy = _beside_spot(positions[other], side, others)
+        if xy is None:
+            return None, f'no free spot {side + " of" if side else "next to"} {other}'
+        return xy, 'near'
     elif kind == 'region':
         if target.get('region') not in layout.REGIONS:
             return None, f'unknown region {target.get("region")}'

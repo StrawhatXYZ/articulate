@@ -63,3 +63,20 @@ def test_progress_and_result_are_read_from_real_action_output():
     assert ('result', 'outcome', 'answered') in events
     assert ('result', 'message', 'The red_cube is in its box.') in events
     assert ('feedback', 'stage', 'planning') in events and len(events) == 7
+
+
+def test_the_goal_conversion_keeps_every_character(tmp_path):
+    import json
+    import os
+    import stat
+    import subprocess
+    import sys
+    fake = tmp_path / 'ros2'                        # prints the goal argument it gets
+    fake.write_text(f'#!{sys.executable}\nimport sys\nsys.stdout.write(sys.argv[-1])\n')
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    text = 'put the 🟥 cube "here"\nనీలం 𠀀'
+    env = dict(os.environ, LAB_TEXT=text, PATH=f'{tmp_path}{os.pathsep}{os.environ["PATH"]}')
+    goal = subprocess.run([sys.executable, '-c', voice._SEND], env=env, capture_output=True,
+                          text=True, encoding='utf-8').stdout
+    assert '\\ud' not in goal                     # no surrogate escapes for YAML to split
+    assert json.loads(goal)['text'] == text

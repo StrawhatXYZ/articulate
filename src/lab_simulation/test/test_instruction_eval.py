@@ -1,7 +1,7 @@
 """The instruction scorer and the planner-only evaluation, with a scripted planner."""
 
 from lab_simulation import instruction_cases as C
-from lab_simulation.instruction_eval import evaluate, outcome_ok, summarize
+from lab_simulation.instruction_eval import evaluate, outcome_ok, render_report, summarize
 from lab_simulation.plan_check import ToolCall
 from lab_simulation.planner import PlannerReply
 
@@ -64,3 +64,14 @@ def test_each_row_is_reported_as_soon_as_it_is_scored():
     seen = []
     rows = evaluate(Scripted(error='no_call'), C.TEST[:2], on_row=seen.append)
     assert seen == rows and len(seen) == 2
+
+
+def test_a_correct_call_the_table_cannot_fit_is_infeasible_not_a_model_error():
+    case = next(c for c in C.TEST if c.text.startswith('put the green block on the left side'))
+    call = ToolCall('move_piece', {'piece': 'green_block', 'target': 'near',
+                                   'other_piece': 'blue_cylinder', 'side': 'left'})
+    row = evaluate(Scripted([call]), [case])[0]
+    assert not row['ok'] and row['infeasible']
+    summary = summarize([row])['test']
+    assert summary['infeasible'] == 1 and summary['feasible']['n'] == 0
+    assert 'Infeasible' in render_report(summarize([row]), [row], {'model': 'm'})

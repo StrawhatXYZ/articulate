@@ -14,7 +14,7 @@ from typing import Dict
 
 from lab_simulation import layout
 from lab_simulation.instruction_cases import E2E, NO_MOTION, REFUSE
-from lab_simulation.instruction_eval import outcome_ok
+from lab_simulation.instruction_eval import infeasible, outcome_ok
 from lab_simulation.tasks import TrialResult
 
 
@@ -69,19 +69,24 @@ class InstructTask:
                        why='' if ok else why,
                        planner_seconds=result.record.get('planner_seconds'),
                        calls=result.record.get('calls'), verdict=result.record.get('verdict'),
+                       verdict_source=result.record.get('verdict_source'),
                        before=dict(before), after=dict(after))
         failure = None if ok else self._blame(case.expected, result)
         return TrialResult(self.name, index, ok, failure, self._now() - t0, details=details)
 
     @staticmethod
     def _blame(expected, result) -> str:
-        """Which part failed: planner, check, execution or outcome."""
+        """Which part failed: planner, check, infeasible (no room), execution or outcome."""
         if result.outcome in ('planner_unavailable', 'not_understood'):
             return 'planner'
+        source = result.record.get('verdict_source', '')
+        if infeasible(expected, result.outcome, source, result.message):
+            return 'infeasible'
         wanted_refusal = expected in (REFUSE, NO_MOTION)
-        if (result.outcome == 'refused' and not wanted_refusal
-                and result.record.get('verdict_source') == 'check'):
+        if result.outcome == 'refused' and not wanted_refusal and source == 'check':
             return 'check'
         if result.outcome in ('failed', 'cancelled'):
             return 'execution'
-        return 'outcome' if result.outcome == 'done' else 'planner'
+        if result.outcome == 'done' and not wanted_refusal:
+            return 'outcome'
+        return 'planner'

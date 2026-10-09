@@ -79,3 +79,15 @@ def test_refusal_and_home_cases_score(lab_kinematics, expected, outcome):
     _, task = make_task(lab_kinematics, Scripted([call]))
     result = task.run(random.Random(0), index)
     assert result.success and result.details['outcome'] == outcome
+
+
+def test_blame_separates_a_full_table_from_a_check_rejection():
+    from lab_simulation.instructor import InstructResult
+    full = InstructResult('refused', 'Refused: step 1: no free spot left of red_cube', [],
+                          {'verdict_source': 'check'})
+    bad = InstructResult('refused', 'Refused: unknown target sideways', [],
+                         {'verdict_source': 'check'})
+    unsafe_done = InstructResult('done', 'Done.', ['go home'], {})
+    assert InstructTask._blame({C.R: 'bin'}, full) == 'infeasible'
+    assert InstructTask._blame({C.R: 'bin'}, bad) == 'check'
+    assert InstructTask._blame(C.REFUSE, unsafe_done) == 'planner'

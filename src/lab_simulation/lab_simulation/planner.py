@@ -9,6 +9,7 @@ Prompt and tools from PR #3 by MunuriGangadhar, plus explicit refuse and
 answer tools (measured in the M3b spike).
 """
 
+import http.client
 import json
 import math
 import re
@@ -190,6 +191,10 @@ class Planner:
                 continue
             except (TimeoutError, ValueError):
                 continue
+            except (OSError, http.client.HTTPException) as error:
+                # Connection reset or closed mid-reply: Ollama went away.
+                return PlannerReply([], 'unavailable', {'error': repr(error)},
+                                    time.monotonic() - t0)
             calls = parse_calls(raw)
             if calls:
                 return PlannerReply(calls, None, raw, time.monotonic() - t0)

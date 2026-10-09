@@ -72,3 +72,23 @@ def test_step_no_longer_valid_stops_the_plan(setup):
     world.hidden = {'green_block'}                  # the camera loses it
     outcome, _ = run(ex, [Step('move', 'green_block', {'kind': 'bin'})])
     assert outcome[0] == 'failed' and 'not visible' in outcome[1]
+
+
+def test_a_missed_grasp_in_the_box_keeps_the_piece_remembered_in_its_box(setup):
+    world, ex = setup
+    ex.observe()
+    run(ex, [Step('move', 'red_cube', {'kind': 'bin'})])
+    world.miss = True                               # the jaws close on nothing
+    world.hidden = {'red_cube'}                     # vision cannot see into the box
+    outcome, _ = run(ex, [Step('move', 'red_cube', {'kind': 'start'})])
+    assert outcome[0] == 'failed' and 'grasp' in outcome[1]
+    assert ex.memory.states()['red_cube'].status == BOX
+
+
+def test_a_placement_in_the_box_is_remembered_even_if_going_home_fails(setup, monkeypatch):
+    world, ex = setup
+    ex.observe()
+    monkeypatch.setattr(world, 'home', lambda: MoveResult(False, False, 0.0, math.inf))
+    outcome, _ = run(ex, [Step('move', 'red_cube', {'kind': 'bin'})])
+    assert outcome[0] == 'failed'
+    assert ex.memory.states()['red_cube'].status == BOX
