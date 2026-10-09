@@ -14,8 +14,11 @@ MoveIt. Its headline task is colour sorting: putting each piece into the
 box of its own colour. With perception switched on, the robot finds and
 names the pieces itself from an overhead RGB-D camera, using an
 open-vocabulary vision model (SigLIP 2), instead of being told where they
-are. A seeded benchmark measures reach, pick-and-place and sorting
-performance, with and without perception.
+are. You can also talk to it: a local language model (Gemma 4 E2B) turns a
+typed or spoken instruction such as "put the red cube back where it was"
+into steps, a deterministic safety check decides what may move, and the arm
+does it, or says why not. A seeded benchmark measures reach,
+pick-and-place, sorting and instruction following.
 Everything runs inside Docker and is viewed in a web browser, so no host-side
 ROS, X server or GPU is required.
 
@@ -27,6 +30,8 @@ ROS, X server or GPU is required.
 | MoveIt 2 | Jazzy | Collision-aware motion planning for every move |
 | RViz 2 | Jazzy | 3D visualisation of the robot model and TF |
 | SigLIP 2 | `google/siglip2-base-patch16-224` | Names what the camera sees (zero-shot, CPU, PyTorch) |
+| Gemma 4 E2B | `gemma4:e2b` via [Ollama](https://ollama.com), on the host | Plans instructions as tool calls (local, offline) |
+| Whisper | mlx-whisper (Apple Silicon) or faster-whisper, on the host | Speech to text for spoken instructions |
 
 ## Requirements
 
@@ -187,6 +192,69 @@ and open <http://localhost:6080>. `task:=pick_place` places pieces on random
 spots instead. Without `realtime:=true` the benchmark runs
 several times faster than real time.
 
+### Talking to the robot
+
+Type or say an instruction; the robot plans it, checks it and carries it out
+in the simulation, or explains why not.
+
+```
+"put the red cube back where it was"
+  -> Whisper           speech to text                      (host, ~0.5 s on an M4)
+  -> Gemma 4 E2B       sentence + what the robot sees -> tool calls (host GPU, ~5-9 s)
+  -> safety check      whole plan validated before anything moves (container)
+  -> MoveIt + arm      each step, looking at the table again first
+```
+
+**One-time setup on the host.** Install [Ollama](https://ollama.com) and
+pull the model (4.6 GB): `ollama pull gemma4:e2b`. For speech, create the
+voice client's environment:
+
+```bash
+# macOS (Apple Silicon)
+python3 -m venv host/.venv && host/.venv/bin/pip install -r host/requirements-mac.txt
+# Windows (PowerShell): faster-whisper, NVIDIA GPU if present
+py -m venv host\.venv; host\.venv\Scripts\pip install -r host\requirements.txt
+```
+
+**Run.** Start the robot in the container and wait for
+`[instruction]: ready`, open <http://localhost:6080>, then talk to it from a
+host terminal:
+
+```bash
+./enter-lab.sh
+ros2 launch lab_simulation demo.launch.py      # perception:=ground_truth, rviz:=false
+
+host/.venv/bin/python host/voice.py            # press Enter, speak, press Enter
+host/.venv/bin/python host/voice.py --text "swap the cube and the cylinder"
+```
+
+The transcript, the plan, each step and the result are printed as they
+happen. Without the voice client, send a goal from the container:
+`ros2 action send_goal --feedback /lab/instruct lab_interfaces/action/Instruct "{text: 'go home'}"`.
+
+**What it can do.** Put a piece in its box; put it back where it started
+(picking it out of the box, from where the robot remembers putting it);
+put it next to another piece, on a given side; move it to an area of the
+table; swap two pieces; sort everything; go home; answer questions about the
+table ("which pieces are in their boxes?"). Other languages work through the
+model ("lal cube ko uske box mein daal do"). Directions are the robot's:
+front is away from it. The boxes fill the robot's left, so the free table is
+a thin strip: an area is a side along it (left, center, right) or a depth
+across it (front, back), and each third of the strip holds about one piece.
+
+**What it refuses.** Unsafe or destructive requests ("throw the cube on the
+floor"), objects that do not exist ("the purple pyramid"), requests
+unrelated to the pieces, and anything the safety check cannot place safely
+("no free spot"). The model never gives coordinates; the check validates
+the whole plan first and the executor stops at the first step that is no
+longer valid. Every request ends with one outcome: `done`, `answered`,
+`refused`, `not_understood`, `failed`, `planner_unavailable` or
+`cancelled`; a request sent while one runs is rejected (busy). Each request
+is logged to `results/instructions.jsonl`.
+
+**Limits.** Each request stands alone: name the piece ("put the red cube
+back"), not "put it back". A request takes 15-40 s, mostly arm motion.
+
 ### Running the tests
 
 ```bash
@@ -195,7 +263,7 @@ colcon test --packages-select lab_simulation
 colcon test-result --verbose
 ```
 
-Use `colcon test` without `--packages-select` to test all three packages.
+Use `colcon test` without `--packages-select` to test every package.
 The suite runs the ROS 2 linters (flake8, pep257, xmllint, lint_cmake) and
 the pytest files in each package's `test/`:
 
@@ -209,14 +277,20 @@ the pytest files in each package's `test/`:
   runner, and the tasks against a fake robot (grasp gate, latch, drops,
   planning failures). `test_robot_description.py` ties the description to the
   controllers, the world's pieces, the bridge, the markers and `move_arm.py`.
+  The M3b tests cover the safety check (including thousands of random,
+  malformed model replies: it must refuse, never crash), the planner against
+  a fake Ollama server, the placement memory, the executor and the
+  instruction scorer.
+
+The host voice client has its own tests: `host/.venv/bin/python -m pytest -q host`.
 
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and on every pull
 request:
 
-- **Build and test** builds the three packages and runs the full test suite
-  in the official `ros:jazzy` image.
+- **Build and test** builds every package and runs the full test suite
+  in the official `ros:jazzy` image, then the voice client's tests.
 - **Lint** runs ShellCheck on the shell scripts and Hadolint on the
   Dockerfile. Rules ignored on purpose are listed, with reasons, in
   `.hadolint.yaml`.
@@ -321,6 +395,30 @@ within the statistical noise: perception is not the bottleneck. The main
 remaining failure in both modes is the tall cylinder tipping over after it
 is released in its box.
 
+### M3b baseline: instructions to robot actions
+
+Gemma 4 E2B on an Apple M4 with the simulation running;
+[`benchmarks/m3b/`](benchmarks/m3b/) has the reports and the full write-up.
+
+| | Result |
+|---|---|
+| Planner, 42 held-out instructions | 40/42; **40/40** of those the table has room for |
+| End to end in the simulation (camera only, 50 runs) | **38/50 (76%, 63–86%)**; 38/46 feasible |
+| Unsafe or non-existent requests refused, nothing moved | 6/6 end to end, 8/8 held-out |
+| Planning time, median | 6–8 s |
+| Instruction time, median (planning + motion) | 26 s |
+
+The language model is rarely the problem: two phrasings ("the red and the
+blue ones", "in front of the cube") account for its misses. The weak links
+are picking a piece back out of its box from memory (2/6 "put it back"
+trials) and the crowded table: a quarter of the misses are instructions with
+no room to carry out, which the robot refuses instead of improvising.
+
+```bash
+ros2 run lab_simulation instruction_eval.py                 # planner only (needs Ollama)
+TASK=instruct TRIALS=50 PERCEPTION=vision ./run-benchmark.sh   # end to end (host)
+```
+
 Compare two runs. Success rates are tested for significance (overlapping 95%
 intervals read "not significant"); other rows have no test and read
 "not tested". Runs with different robots, grasp modes, seeds, trial counts or
@@ -370,6 +468,7 @@ into Gazebo and read by RViz and MoveIt, so they cannot drift apart.
 | `/lab/camera/{image,depth_image,camera_info}` | `sensor_msgs/msg/Image`, `CameraInfo` | Overhead RGB-D camera (perception only) |
 | `/lab/perception/request` | `std_msgs/msg/Empty` | Ask for one detection of the next frame |
 | `/lab/perception/objects` | `vision_msgs/msg/Detection3DArray` | Named objects: label, score, 3D pose |
+| `/lab/instruct` | `lab_interfaces/action/Instruct` | An instruction in; progress (feedback) and outcome out |
 | `/world/table_world/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | Teleport a piece (benchmark resets) |
 
 The bridge mapping lives in `config/bridge.yaml`.
@@ -436,10 +535,16 @@ ai-robotics-lab/
 ├── enter-lab.sh               # Interactive shell in the running container
 ├── stop-lab.sh                # Stop and remove the container
 ├── run-benchmark.sh           # Run the benchmark in the container; results in ./results/
+├── AGENTS.md                  # Guide for coding agents and contributors
+├── host/                      # Voice client, runs on the host (macOS or Windows)
+│   ├── voice.py               # Push to talk -> Whisper -> /lab/instruct
+│   ├── stt.py                 # Speech to text: mlx-whisper or faster-whisper
+│   └── requirements*.txt
 ├── benchmarks/
 │   ├── baseline/              # Step 1 baseline (3-DOF arm, suction)
 │   ├── step2/                 # Step 2 baseline (SO-101), and the comparison
-│   └── m3a/                   # M3a: sorting from the camera vs ground truth
+│   ├── m3a/                   # M3a: sorting from the camera vs ground truth
+│   └── m3b/                   # M3b: instruction following (planner, end to end)
 ├── docs/superpowers/          # Design specs and implementation plans
 ├── LICENSE                    # Apache License 2.0
 ├── NOTICE                     # Copyright notice
@@ -451,13 +556,21 @@ ai-robotics-lab/
     │   ├── meshes/            # Upstream meshes, their licence and SOURCE.md
     │   └── tools/generate_xacro.py
     ├── so101_moveit_config/   # SRDF, IK, limits, OMPL, controllers, move_group launch
+    ├── lab_interfaces/        # The Instruct action
     ├── lab_perception/        # Camera model, depth segmentation, SigLIP 2 naming, ROS node
     └── lab_simulation/        # The lab: world, tasks, benchmark
         ├── config/            # RViz, ros_gz_bridge, ros2_control
         ├── lab_simulation/    # Python package
         │   ├── so101_kinematics.py  # Forward and vertical-approach inverse kinematics
         │   ├── layout.py      # Pieces, workspace and seeded sampling
-        │   ├── tasks.py       # Reach and pick-and-place trials
+        │   ├── tasks.py       # Reach, pick-and-place and sort trials
+        │   ├── targets.py     # Instruction target -> safe, reachable table spot
+        │   ├── memory.py      # Where the robot believes each piece is
+        │   ├── planner.py     # Gemma 4 E2B via Ollama: instruction -> tool calls
+        │   ├── plan_check.py  # The safety check: tool calls -> validated steps
+        │   ├── executor.py    # Runs checked steps with the pick-and-place skill
+        │   ├── instructor.py  # One instruction from words to motion
+        │   ├── instruction_cases.py, instruction_eval.py, instruct_task.py  # M3b benchmarks
         │   ├── metrics.py     # Statistics, reports and comparisons
         │   ├── arm.py         # Moves through MoveIt
         │   ├── gripper.py     # Jaw control and stall detection
@@ -465,8 +578,8 @@ ai-robotics-lab/
         │   ├── description.py # Builds the robot description
         │   ├── object_markers.py
         │   └── benchmark.py   # Benchmark command line
-        ├── launch/            # arm_world.launch.py, benchmark.launch.py
-        ├── scripts/           # benchmark.py, move_arm.py, object_markers.py
+        ├── launch/            # arm_world.launch.py, benchmark.launch.py, demo.launch.py
+        ├── scripts/           # benchmark.py, instruction_node.py, instruction_eval.py, ...
         ├── test/
         ├── urdf/lab_so101.urdf.xacro  # SO-101 on the table + ros2_control + grasp latch
         └── worlds/table_world.sdf     # Table, pieces, sorting boxes and lighting
@@ -512,7 +625,7 @@ The comment there explains how to update it.
 
 ## Status and roadmap
 
-Verified on 7 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
+Verified on 9 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 
 | Capability | Status |
 |---|---|
@@ -523,17 +636,18 @@ Verified on 7 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 | Two-finger pick-and-place, visible in RViz | Working, 98% at baseline (latched), 73% friction-only |
 | Colour sorting into matching boxes | Working, 93% at baseline |
 | Sorting from the camera alone (SigLIP 2 naming) | Working, 92% (ground truth 93%) |
+| Typed and spoken instructions, planned by Gemma 4 E2B behind a safety check | Working, 76% end to end (38/50), planner 40/40 feasible held-out |
 | Seeded benchmark with committed baselines | Working (see `benchmarks/`) |
-| Test suite (unit, consistency, linters) | Working, 650 checks passing |
+| Test suite (unit, consistency, linters) | Working, 760 checks passing, plus the voice client's tests |
 
 The AI plan has three milestones, each measured on this benchmark:
 
 1. **M3a Vision** (done): the robot finds and names the pieces from an
    overhead camera.
-2. **M3b Language** (next): instructions such as "put the red cube in its
-   box", typed and then spoken, turned into robot skills by a language-model
-   planner behind a safety gate.
-3. **M4 Learning**: the scripted pipeline becomes a demonstration data
+2. **M3b Language** (done): instructions such as "put the red cube in its
+   box", typed or spoken, turned into robot skills by a local language-model
+   planner (Gemma 4 E2B) behind a deterministic safety check.
+3. **M4 Learning** (next): the scripted pipeline becomes a demonstration data
    engine; learned policies (ACT, then SmolVLA) are trained on it and
    compared with the scripted skills.
 
