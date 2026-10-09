@@ -154,3 +154,31 @@ def test_yaws_and_light_are_seeded_and_in_range():
         (dx, dy, dz), brightness = layout.sample_light(random.Random(seed))
         assert dz < 0 and abs(dx) <= 0.8 and abs(dy) <= 0.8
         assert 0.4 <= brightness <= 1.0
+
+
+def test_every_region_has_free_reachable_spots():
+    from lab_simulation import targets
+    for region in layout.REGIONS:
+        xy = targets.region_point(region, [])
+        assert xy is not None, region
+        assert layout.in_region(xy, region)
+
+
+def test_regions_follow_the_robots_view():
+    from lab_simulation import targets
+    p = {r: targets.region_point(r, []) for r in layout.REGIONS}
+    assert p['left'][1] > p['center'][1] > p['right'][1]
+
+    def reach(xy):
+        return math.dist(xy, layout.PAN_AXIS_XY)
+
+    assert reach(p['front']) > reach(p['center']) > reach(p['back'])
+
+
+def test_every_sampled_layout_position_has_a_side_and_a_depth():
+    rng = random.Random(3)
+    for _ in range(200):
+        for xy in layout.sample_layout(rng).values():
+            assert sum(layout.in_region(xy, r) for r in layout.REGIONS) == 2
+            assert layout.area_of(xy) in {f'{d} {s}' for d in ('front', 'back')
+                                          for s in ('left', 'center', 'right')}

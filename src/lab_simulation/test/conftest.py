@@ -21,3 +21,10 @@ def lab_kinematics(lab_description):
     """Return the kinematics of the lab arm, in the world frame."""
     from lab_simulation.so101_kinematics import Kinematics
     return Kinematics(lab_description)
+
+
+@pytest.fixture
+def world(lab_kinematics):
+    """Return the fake robot and scene from fakes.py."""
+    from fakes import FakeWorld
+    return FakeWorld(lab_kinematics)

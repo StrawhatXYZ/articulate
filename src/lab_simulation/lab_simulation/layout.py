@@ -164,6 +164,42 @@ def in_workspace(xy: XY) -> bool:
             and abs(math.atan2(dy, dx)) <= MAX_BEARING + 1e-9)
 
 
+# Areas of the table for instructions ("put it in the front"). The bins fill
+# the robot's left, so the free table is a thin curved strip: the annulus
+# sector between these bearings (rad), about 7 cm deep. Along the strip, as
+# the robot sees it, are left (the third nearest the bins), center and right;
+# across it, front (the far half, away from the robot) and back (the near
+# half). A spot has a side and a depth, so it is, say, both front and left.
+REGIONS = ('left', 'right', 'front', 'back', 'center')
+FREE_BEARINGS = (-1.73, -0.05)
+_SIDE_BEARINGS = (-1.17, -0.61)
+_DEPTH_RADIUS = 0.18
+
+
+def side_of(xy: Sequence[float]) -> str:
+    """Return 'left', 'center' or 'right': where xy lies along the free strip."""
+    bearing = math.atan2(xy[1] - PAN_AXIS_XY[1], xy[0] - PAN_AXIS_XY[0])
+    if bearing > _SIDE_BEARINGS[1]:
+        return 'left'
+    return 'right' if bearing < _SIDE_BEARINGS[0] else 'center'
+
+
+def depth_of(xy: Sequence[float]) -> str:
+    """Return 'front' (away from the robot) or 'back': where xy lies across the strip."""
+    radius = math.hypot(xy[0] - PAN_AXIS_XY[0], xy[1] - PAN_AXIS_XY[1])
+    return 'front' if radius > _DEPTH_RADIUS else 'back'
+
+
+def in_region(xy: Sequence[float], region: str) -> bool:
+    """Return True if xy lies in a table area (a side or a depth)."""
+    return region in (side_of(xy), depth_of(xy))
+
+
+def area_of(xy: Sequence[float]) -> str:
+    """Describe where xy is, e.g. 'front left'."""
+    return f'{depth_of(xy)} {side_of(xy)}'
+
+
 def sample_layout(rng: random.Random, min_separation: float = MIN_SEPARATION,
                   max_attempts: int = 10000) -> Dict[str, XY]:
     """Return a seeded random resting position for every piece."""

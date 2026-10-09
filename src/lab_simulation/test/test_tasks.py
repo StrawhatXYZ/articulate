@@ -9,135 +9,13 @@ held piece moves with the grasp frame.
 import math
 import random
 
+from fakes import CLOSED, FakeWorld, HOME, OPEN, PRESSED, STALL
 from lab_simulation import layout
 from lab_simulation.tasks import (
-    CARRY_TOLERANCE_M, GRIP_MAX_OFFSET_M, LATCH_EASE_RAD, MoveResult, Observation,
-    PickPlaceTask, PiecePose, ReachTask, SortTask, vertical_rotation)
+    _approach_yaws, BIN_RELEASE_RAD, CARRY_TOLERANCE_M, GRIP_MAX_OFFSET_M, LATCH_EASE_RAD,
+    PickPlaceTask, ReachTask, SortTask, vertical_rotation)
 import numpy as np
 import pytest
-
-HOME = (0.0, -1.3, 0.6, 1.6, 0.0)
-OPEN, CLOSED, STALL = 0.6, -0.17, 0.19
-# Where the moving jaw pushes a gripped piece, in the grasp frame.
-PRESSED = np.array([0.009, 0.0, 0.0])
-
-
-class FakeWorld:
-    """Arm, gripper and scene in one, sharing state."""
-
-    def __init__(self, kin, positions=None):
-        self.kin = kin
-        self.q = HOME
-        self.gripper = OPEN
-        self.time = 0.0
-        self.held = None
-        self.grip_offset = None
-        self.latched = set()
-        self.latch_calls = []
-        self.scene_updates = []
-        self.moves = []
-        self.fail_plan_at = None      # move index that fails to plan
-        self.drop_on_move = None      # move index after which a held piece falls out
-        self.miss = False             # piece slides away as the jaws close
-        self.held_at = None
-        self.source = 'ground_truth'  # or 'vision'
-        self.seen_offset = (0.0, 0.0)  # vision: detections this far off the truth
-        self.hidden = set()           # vision: pieces the camera does not see
-        self.pressed = PRESSED        # where the jaws push a gripped piece
-        self.observations = 0
-        positions = positions or layout.sample_layout(random.Random(1))
-        self.pieces = {name: PiecePose(x, y, layout.PIECES[name].centre_z)
-                       for name, (x, y) in positions.items()}
-
-    # arm
-    def joint_positions(self):
-        return self.q
-
-    def move_to(self, q):
-        index = len(self.moves)
-        self.moves.append(tuple(q))
-        self.time += 1.0
-        if index == self.fail_plan_at:
-            return MoveResult(False, False, 0.0, math.inf)
-        self.q = tuple(q)
-        if self.held is not None:
-            if index == self.drop_on_move and self.held not in self.latched:
-                self._drop()
-            else:
-                tcp = self.kin.forward(self.q)
-                x, y, z = (tcp @ np.array([*self.grip_offset, 1.0]))[:3]
-                self.pieces[self.held] = PiecePose(x, y, z)
-        return MoveResult(True, True, 1.0, 0.0)
-
-    def home(self):
-        return self.move_to(HOME)
-
-    # gripper
-    def release(self, angle=OPEN):
-        self.released_to = angle
-        self.gripper = OPEN
-        if self.held is not None and self.held not in self.latched:
-            self._drop()
-        return True
-
-    def grip(self):
-        tcp = self.kin.forward(self.q)
-        for name, pose in self.pieces.items():
-            local = (np.linalg.inv(tcp) @ np.array([*pose.xyz, 1.0]))[:3]
-            if np.linalg.norm(local) < 0.02 and not self.miss:
-                self.held, self.grip_offset = name, self.pressed
-                x, y, z = (tcp @ np.array([*self.pressed, 1.0]))[:3]
-                self.pieces[name] = PiecePose(x, y, z)
-                self.gripper = STALL
-                return STALL
-        self.gripper = CLOSED
-        return CLOSED
-
-    def hold(self, angle):
-        self.held_at = angle
-
-    def _drop(self):
-        p = self.pieces[self.held]
-        self.pieces[self.held] = PiecePose(p.x, p.y, layout.PIECES[self.held].centre_z)
-        self.held = None
-
-    # scene
-    def pose(self, name):
-        return self.pieces[name]
-
-    def observe(self):
-        self.observations += 1
-        self.time += 0.5
-        dx, dy = self.seen_offset
-        poses = {n: p._replace(x=p.x + dx, y=p.y + dy) for n, p in self.pieces.items()
-                 if n not in self.hidden}
-        evaluation = {'pieces': {}, 'missed': len(self.hidden), 'false': 0} \
-            if self.source == 'vision' else None
-        return Observation(poses, self.source, evaluation, wait_s=0.5, latency_s=0.2)
-
-    def latch(self, name):
-        self.latch_calls.append(name)
-        self.latched.add(name)
-        return True
-
-    def unlatch(self, name):
-        self.latched.discard(name)
-        if self.held == name and self.gripper == OPEN:
-            self._drop()
-
-    def update_planning_scene(self, exclude=None, held=None):
-        self.scene_updates.append((exclude, held))
-
-    def wait_settled(self, timeout_s=3.0):
-        return True
-
-    def now(self):
-        return self.time
-
-
-@pytest.fixture
-def world(lab_kinematics):
-    return FakeWorld(lab_kinematics)
 
 
 def pick_task(world, mode='latched'):
@@ -439,3 +317,38 @@ def test_sort_centres_the_jaws_on_the_bin_whatever_the_wrist_does(lab_kinematics
         place = min(poses, key=lambda q: world.kin.forward(q)[2, 3])
         jaws = world.kin.forward(place)[:3, 3]
         assert math.dist(jaws[:2], layout.BINS[name].xy) < 1e-3
+
+
+def test_pick_and_place_records_where_the_piece_was_put(world):
+    task = pick_task(world)
+    details = {}
+    assert task.pick_and_place(layout.PIECES['red_cube'], world.pose('red_cube'),
+                               layout.BINS['red_cube'].xy, details, aim_jaws=True,
+                               nominal_grip=True) is None
+    placed = details['placed']
+    assert math.dist(placed[:2], world.pose('red_cube').xy) < 0.005
+    assert placed[2] == pytest.approx(layout.PIECES['red_cube'].centre_z)
+
+
+def test_approach_yaws_try_each_jaw_on_either_side():
+    assert [round(y[0], 3) for y in _approach_yaws([0.3], 0.3)] == [0.3, round(0.3 + math.pi, 3)]
+    assert len(_approach_yaws(None, 0.0)) == 4
+
+
+def test_picking_from_a_bin_opens_the_jaws_only_partly(world, monkeypatch):
+    angles = []
+    original = world.release
+    monkeypatch.setattr(world, 'release',
+                        lambda angle=OPEN: angles.append(angle) or original(angle))
+    pick_task(world).pick_and_place(layout.PIECES['red_cube'], world.pose('red_cube'),
+                                    layout.BINS['red_cube'].xy, {}, aim_jaws=True, from_bin=True)
+    assert angles[0] == BIN_RELEASE_RAD
+
+
+def test_picking_from_a_bin_tries_another_approach_after_a_planning_failure(world):
+    world.fail_plan_at = 0                     # the first hover cannot be planned
+    details = {}
+    failure = pick_task(world).pick_and_place(
+        layout.PIECES['red_cube'], world.pose('red_cube'), layout.BINS['red_cube'].xy, details,
+        aim_jaws=True, from_bin=True)
+    assert failure is None and details['stage'] == 'home'
