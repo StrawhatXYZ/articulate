@@ -100,3 +100,10 @@ def test_every_planning_side_error_counts_as_a_planning_failure():
                  MoveItErrorCodes.INVALID_LINK_NAME, MoveItErrorCodes.INVALID_OBJECT_NAME,
                  MoveItErrorCodes.FRAME_TRANSFORM_FAILURE):
         assert code in PLANNING_FAILURES
+
+
+def test_plan_request_scales_velocity_and_acceleration_by_speed():
+    default = plan_request(HOME)
+    fast = plan_request(HOME, speed=0.8)
+    assert default.max_velocity_scaling_factor == 0.5
+    assert fast.max_velocity_scaling_factor == 0.8 and fast.max_acceleration_scaling_factor == 0.8

@@ -51,6 +51,8 @@ def generate_launch_description():
                               description='instruct: Ollama server with the planner model'),
         DeclareLaunchArgument('model', default_value='gemma4:e2b',
                               description='instruct: planner model'),
+        DeclareLaunchArgument('speed', default_value='0.5',
+                              description='Arm speed, a fraction of the joint limits'),
     ]
 
     # Scoped, so the included launch's own perception argument (true/false)
@@ -76,7 +78,8 @@ def generate_launch_description():
                    '--grasp-mode', LaunchConfiguration('grasp_mode'),
                    '--perception', LaunchConfiguration('perception'),
                    '--ollama-url', LaunchConfiguration('ollama_url'),
-                   '--model', LaunchConfiguration('model')],
+                   '--model', LaunchConfiguration('model'),
+                   '--speed', LaunchConfiguration('speed')],
         parameters=[{'use_sim_time': True}],
         output='screen')
 

@@ -17,7 +17,7 @@ import sys
 import threading
 
 from lab_interfaces.action import Instruct
-from lab_simulation.arm import Arm, JointFeedback
+from lab_simulation.arm import Arm, JointFeedback, VELOCITY_SCALING
 from lab_simulation.description import robot_description
 from lab_simulation.executor import Executor
 from lab_simulation.gripper import Gripper
@@ -44,8 +44,10 @@ def main() -> int:
     planner = Planner(node.declare_parameter('ollama_url', DEFAULT_URL).value,
                       node.declare_parameter('model', DEFAULT_MODEL).value)
     log_path = Path(node.declare_parameter('log', '/workspace/results/instructions.jsonl').value)
+    speed = float(node.declare_parameter('speed', VELOCITY_SCALING).value)
     feedback = JointFeedback(node)
-    arm, gripper, scene = Arm(node, feedback), Gripper(node, feedback), Scene(node, perception)
+    arm, gripper = Arm(node, feedback, speed), Gripper(node, feedback)
+    scene = Scene(node, perception)
     kinematics = Kinematics(robot_description())
     pick = PickPlaceTask(arm, gripper, scene, kinematics, lambda: sim_now(node), 'latched')
     executor = Executor(pick, scene, gripper, arm, PlacementMemory())

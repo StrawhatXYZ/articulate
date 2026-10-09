@@ -145,7 +145,7 @@ def run(args) -> int:
     node = rclpy.create_node(
         'benchmark', parameter_overrides=[Parameter('use_sim_time', value=True)])
     feedback = JointFeedback(node)
-    arm = Arm(node, feedback)
+    arm = Arm(node, feedback, args.speed)
     gripper = Gripper(node, feedback)
     scene = Scene(node, args.perception)
     kinematics = Kinematics(robot_description())
@@ -208,6 +208,7 @@ def run(args) -> int:
         'robot': ROBOT,
         'grasp_mode': args.grasp_mode,
         'perception': args.perception,
+        **({'speed': args.speed} if args.speed != 0.5 else {}),
         **({'model': args.model, 'ollama_url': args.ollama_url} if planner else {}),
         'tasks': [task.name for task in tasks],
         'trials_per_task': args.trials,
@@ -251,6 +252,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument('--ollama-url', default='http://host.docker.internal:11434',
                             help='instruct: the Ollama server with the planner model')
     run_parser.add_argument('--model', default='gemma4:e2b', help='instruct: planner model')
+    run_parser.add_argument('--speed', type=float, default=0.5,
+                            help='arm speed, a fraction of the joint limits (default 0.5)')
     compare_parser = sub.add_parser('compare', help='compare two run directories')
     compare_parser.add_argument('a', type=Path)
     compare_parser.add_argument('b', type=Path)

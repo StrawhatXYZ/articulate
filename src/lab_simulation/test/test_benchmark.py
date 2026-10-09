@@ -120,3 +120,8 @@ def test_instruct_task_and_planner_options_parse():
     assert args.task == 'instruct' and args.model == 'gemma4:e2b'
     assert args.ollama_url == 'http://example:11434'
     assert 'instruct' not in benchmark.TASKS          # 'all' never needs Ollama
+
+
+def test_speed_option_defaults_to_the_benchmark_speed():
+    assert benchmark.build_parser().parse_args(['run']).speed == 0.5
+    assert benchmark.build_parser().parse_args(['run', '--speed', '0.8']).speed == 0.8

@@ -21,8 +21,7 @@ PLANNER = 'RRTConnect'
 # Planning volume, world frame: the table and well above it.
 WORKSPACE = ((-1.0, -1.0, 0.0), (1.0, 1.0, 2.0))
 PLANNING_TIME_S = 2.0
-VELOCITY_SCALING = 0.5
-ACCELERATION_SCALING = 0.5
+VELOCITY_SCALING = 0.5         # benchmark speed: fraction of the joint velocity limits
 GOAL_TOLERANCE_RAD = 0.001     # planner goal tolerance per joint
 REACHED_TOLERANCE_RAD = 0.02   # measured joint error that counts as arrived
 MOVE_TIMEOUT_S = 30.0          # simulation seconds for planning plus execution
@@ -91,8 +90,8 @@ class SettleDetector:
         return oldest if spread <= self._tolerance else None
 
 
-def plan_request(goal: Sequence[float]) -> MotionPlanRequest:
-    """Return a MoveIt request to move the arm group to joint angles goal."""
+def plan_request(goal: Sequence[float], speed: float = VELOCITY_SCALING) -> MotionPlanRequest:
+    """Return a MoveIt request to move the arm to joint angles goal at speed (0-1]."""
     request = MotionPlanRequest()
     request.group_name = GROUP
     request.pipeline_id = PIPELINE
@@ -104,8 +103,8 @@ def plan_request(goal: Sequence[float]) -> MotionPlanRequest:
      request.workspace_parameters.max_corner.z) = WORKSPACE[1]
     request.num_planning_attempts = 1
     request.allowed_planning_time = PLANNING_TIME_S
-    request.max_velocity_scaling_factor = VELOCITY_SCALING
-    request.max_acceleration_scaling_factor = ACCELERATION_SCALING
+    request.max_velocity_scaling_factor = speed
+    request.max_acceleration_scaling_factor = speed
     request.start_state.is_diff = True      # start from the current state
     request.goal_constraints = [Constraints(joint_constraints=[
         JointConstraint(joint_name=name, position=float(value),
@@ -144,9 +143,10 @@ class JointFeedback:
 class Arm:
     """Plan and execute arm moves with MoveIt's move_group action."""
 
-    def __init__(self, node: Node, feedback: JointFeedback):
+    def __init__(self, node: Node, feedback: JointFeedback, speed: float = VELOCITY_SCALING):
         self._node = node
         self._feedback = feedback
+        self._speed = speed
         self._client = ActionClient(node, MoveGroup, '/move_action')
 
     def wait_for_server(self) -> bool:
@@ -170,7 +170,7 @@ class Arm:
         REACHED_TOLERANCE_RAD of the goal. Times are simulation seconds.
         """
         start = sim_now(self._node)
-        request = MoveGroup.Goal(request=plan_request(goal))
+        request = MoveGroup.Goal(request=plan_request(goal, self._speed))
         request.planning_options.plan_only = False
         request.planning_options.planning_scene_diff.is_diff = True
         request.planning_options.planning_scene_diff.robot_state.is_diff = True

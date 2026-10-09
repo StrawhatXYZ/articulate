@@ -35,6 +35,9 @@ def generate_launch_description():
                               description='Ollama server with the planner model'),
         DeclareLaunchArgument('model', default_value='gemma4:e2b',
                               description='Planner model'),
+        DeclareLaunchArgument('speed', default_value='0.8',
+                              description='Arm speed, a fraction of the joint limits (20 pick'
+                                          ' and 20 sort trials at 0.8 matched 0.5)'),
     ]
 
     # Scoped, so the included launch's own perception argument (true/false)
@@ -53,7 +56,8 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True,
                      'perception': LaunchConfiguration('perception'),
                      'ollama_url': LaunchConfiguration('ollama_url'),
-                     'model': LaunchConfiguration('model')}],
+                     'model': LaunchConfiguration('model'),
+                     'speed': PythonExpression([LaunchConfiguration('speed')])}],
         output='screen')
 
     return LaunchDescription([*declare_args, simulation, instruction])

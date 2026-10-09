@@ -366,8 +366,10 @@ class PickPlaceTask:
         grip = NOMINAL_GRIP if nominal_grip else measured_grip
         self._scene.update_planning_scene(held=piece.name)
 
-        # Carry: lift, move over the target, lower until the piece just
-        # clears the table.
+        # Carry: straight to above the target (MoveIt plans the lift as part
+        # of that path, with the held piece in the planning scene), then
+        # lower until the piece just clears the table. The lift pose only
+        # seeds the inverse kinematics.
         details['stage'] = 'carry'
         held_yaw = self._kin.grasp_yaw(self._arm.joint_positions())
         place_xyz = (target[0], target[1], piece.centre_z + PLACE_CLEARANCE_M)
@@ -390,7 +392,7 @@ class PickPlaceTask:
         except Unreachable:
             return 'unreachable'
         details['carry_deviation_m'] = 0.0
-        for q in (q_lift, q_above, q_place):
+        for q in (q_above, q_place):
             failure = self._move(q)
             if failure:
                 return failure

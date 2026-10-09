@@ -101,7 +101,7 @@ def test_a_stalled_jaw_away_from_the_piece_is_a_miss(world, monkeypatch):
 
 
 def test_friction_slip_during_carry_is_dropped(world):
-    world.drop_on_move = 3      # hover, grasp, lift: falls out on the lift
+    world.drop_on_move = 2      # hover, grasp, above target: falls out on the way
     result = pick_task(world, 'friction').run(random.Random(0), 0)
     assert result.failure == 'dropped'
     assert result.details['carry_deviation_m'] > CARRY_TOLERANCE_M
@@ -155,7 +155,7 @@ def test_jaws_slide_off_the_placed_piece_before_lifting(world):
     """Lifting straight up would drag the piece pressed against the fixed jaw."""
     from lab_simulation.tasks import RELEASE_CLEARANCE_M
     assert pick_task(world).run(random.Random(0), 0).success
-    place, clear, retreat = (world.kin.forward(q) for q in world.moves[4:7])
+    place, clear, retreat = (world.kin.forward(q) for q in world.moves[3:6])
     shift = clear[:3, 3] - place[:3, 3]
     # The piece was pressed against the fixed jaw, on the grasp frame's +x
     # side: moving +x takes that jaw away from it.
@@ -227,7 +227,7 @@ def test_sort_checks_pieces_at_the_end(world, monkeypatch):
     original = world.wait_settled
 
     def knock_red_out(timeout_s=3.0):
-        if len(world.moves) >= 24:     # after the last piece's trip home
+        if len(world.moves) >= 21:     # after the last piece's trip home (7 moves each)
             p = world.pieces['red_cube']
             world.pieces['red_cube'] = p._replace(x=p.x + 0.08)
         return original(timeout_s)
@@ -352,3 +352,15 @@ def test_picking_from_a_bin_tries_another_approach_after_a_planning_failure(worl
         layout.PIECES['red_cube'], world.pose('red_cube'), layout.BINS['red_cube'].xy, details,
         aim_jaws=True, from_bin=True)
     assert failure is None and details['stage'] == 'home'
+
+
+def test_after_the_grasp_the_arm_goes_straight_to_above_the_target(world):
+    details = {}
+    target = layout.BINS['red_cube'].xy
+    assert pick_task(world).pick_and_place(layout.PIECES['red_cube'], world.pose('red_cube'),
+                                           target, details, aim_jaws=True) is None
+    # hover, grasp, above the target, place, slide clear, retreat, home
+    assert len(world.moves) == 7
+    above = world.kin.forward(world.moves[2])[:3, 3]
+    place = world.kin.forward(world.moves[3])[:3, 3]
+    assert math.dist(above[:2], target) < 0.03 and above[2] > place[2]
