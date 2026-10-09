@@ -24,7 +24,7 @@ from vision_msgs.msg import Detection3DArray
 
 from . import layout
 from .perception_eval import evaluate
-from .ros_util import sim_now, spin_for, spin_until
+from .ros_util import catch_up, sim_now, spin_for, spin_until
 from .tasks import Observation, PiecePose, SimulationUnresponsive
 
 # One pose topic per piece, bridged from each piece's PosePublisher.
@@ -228,6 +228,7 @@ class Scene:
             return Observation({n: self.pose(n) for n in layout.PIECES if n in self._poses},
                                'ground_truth')
         from lab_perception.messages import detections_from_msg
+        catch_up(self._node)        # a frame is fresh only if newer than the real now
         requested, wall = sim_now(self._node), time.monotonic()
 
         def fresh() -> bool:

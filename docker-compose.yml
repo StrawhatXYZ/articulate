@@ -25,6 +25,10 @@ services:
       - ./results:/workspace/results
       # Downloaded perception model weights, kept across container rebuilds.
       - hf-cache:/root/.cache/huggingface
+    # The planner reaches Ollama on the host at host.docker.internal (built in
+    # on Docker Desktop; this mapping adds it on Linux).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     shm_size: "2g"
     stdin_open: true
     tty: true
