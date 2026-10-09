@@ -3,6 +3,7 @@ Benchmark command line: run seeded trials, write reports, compare runs.
 
 Usage (inside the container, with the simulation running):
   ros2 run lab_simulation benchmark.py run --task all --trials 100 --seed 42
+  ros2 run lab_simulation benchmark.py run --task instruct --trials 50 --perception vision
   ros2 run lab_simulation benchmark.py compare results/A results/B
 
 `run` is normally started by launch/benchmark.launch.py. ROS is imported only
@@ -29,7 +30,7 @@ EXIT_NO_SIMULATION = 2
 EXIT_UNRESPONSIVE = 3
 UNTHROTTLED_RTF = 1000
 ROBOT = 'so101'
-TASKS = ('reach', 'pick_place', 'sort')
+TASKS = ('reach', 'pick_place', 'sort')   # 'all'; instruct (needs Ollama) runs on its own
 
 
 def make_run_dir(base: Path, now: datetime) -> Path:
@@ -133,6 +134,11 @@ def run(args) -> int:
     from .ros_util import sim_now, spin_until
     from .scene import Scene
     from .so101_kinematics import Kinematics
+    from .executor import Executor
+    from .instruct_task import InstructTask
+    from .instructor import Instructor
+    from .memory import PlacementMemory
+    from .planner import Planner
     from .tasks import BIN_RELEASE_RAD, PickPlaceTask, ReachTask, SortTask
 
     rclpy.init()
@@ -157,6 +163,14 @@ def run(args) -> int:
         rclpy.try_shutdown()
         return EXIT_NO_SIMULATION
 
+    planner = Planner(args.ollama_url, args.model) if args.task == 'instruct' else None
+    problem = planner.check_ready() if planner else None
+    if problem:
+        print(f'planner not ready: {problem}', file=sys.stderr)
+        node.destroy_node()
+        rclpy.try_shutdown()
+        return EXIT_NO_SIMULATION
+
     # Uncapped by default for throughput; real time when someone is watching.
     rtf_set = False if args.realtime else set_real_time_factor(UNTHROTTLED_RTF)
     now = (lambda: sim_now(node))
@@ -165,7 +179,12 @@ def run(args) -> int:
         'pick_place': PickPlaceTask(arm, gripper, scene, kinematics, now, args.grasp_mode),
         'sort': SortTask(arm, gripper, scene, kinematics, now, args.grasp_mode),
     }
-    tasks = list(all_tasks.values()) if args.task == 'all' else [all_tasks[args.task]]
+    if planner:
+        pick = PickPlaceTask(arm, gripper, scene, kinematics, now, args.grasp_mode)
+        executor = Executor(pick, scene, gripper, arm, PlacementMemory())
+        all_tasks['instruct'] = InstructTask(Instructor(planner, executor), executor, scene, now)
+    tasks = ([all_tasks[name] for name in TASKS] if args.task == 'all'
+             else [all_tasks[args.task]])
 
     def reset(rng: random.Random) -> bool:
         # Let go of everything and go home. A failed trial can leave the jaws
@@ -189,6 +208,7 @@ def run(args) -> int:
         'robot': ROBOT,
         'grasp_mode': args.grasp_mode,
         'perception': args.perception,
+        **({'model': args.model, 'ollama_url': args.ollama_url} if planner else {}),
         'tasks': [task.name for task in tasks],
         'trials_per_task': args.trials,
         'seed': args.seed,
@@ -212,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='benchmark', description=__doc__.splitlines()[1])
     sub = parser.add_subparsers(dest='command', required=True)
     run_parser = sub.add_parser('run', help='run trials against the live simulation')
-    run_parser.add_argument('--task', choices=('all', *TASKS), default='all')
+    run_parser.add_argument('--task', choices=('all', *TASKS, 'instruct'), default='all')
     run_parser.add_argument('--trials', type=int, default=100)
     run_parser.add_argument('--seed', type=int, default=42)
     run_parser.add_argument('--out', default='results')
@@ -228,6 +248,9 @@ def build_parser() -> argparse.ArgumentParser:
         '--realtime', nargs='?', const=True, default=False,
         type=lambda value: value.lower() == 'true',
         help='keep the simulation at real time (for watching) instead of uncapped')
+    run_parser.add_argument('--ollama-url', default='http://host.docker.internal:11434',
+                            help='instruct: the Ollama server with the planner model')
+    run_parser.add_argument('--model', default='gemma4:e2b', help='instruct: planner model')
     compare_parser = sub.add_parser('compare', help='compare two run directories')
     compare_parser.add_argument('a', type=Path)
     compare_parser.add_argument('b', type=Path)

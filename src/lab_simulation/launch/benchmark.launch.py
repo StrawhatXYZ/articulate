@@ -8,6 +8,7 @@ Usage:
       rviz:=true realtime:=true
   ros2 launch lab_simulation benchmark.launch.py grasp_mode:=friction
   ros2 launch lab_simulation benchmark.launch.py task:=sort perception:=vision
+  ros2 launch lab_simulation benchmark.launch.py task:=instruct trials:=50 perception:=vision
 """
 
 import os
@@ -32,7 +33,7 @@ def generate_launch_description():
 
     declare_args = [
         DeclareLaunchArgument('task', default_value='all',
-                              description='all, reach, pick_place or sort'),
+                              description='all, reach, pick_place, sort or instruct'),
         DeclareLaunchArgument('trials', default_value='100', description='Trials per task'),
         DeclareLaunchArgument('seed', default_value='42', description='Random seed'),
         DeclareLaunchArgument('out', default_value='/workspace/results',
@@ -46,6 +47,10 @@ def generate_launch_description():
         DeclareLaunchArgument('perception', default_value='ground_truth',
                               description='ground_truth (default) or vision: plan from the'
                                           ' overhead camera'),
+        DeclareLaunchArgument('ollama_url', default_value='http://host.docker.internal:11434',
+                              description='instruct: Ollama server with the planner model'),
+        DeclareLaunchArgument('model', default_value='gemma4:e2b',
+                              description='instruct: planner model'),
     ]
 
     # Scoped, so the included launch's own perception argument (true/false)
@@ -69,7 +74,9 @@ def generate_launch_description():
                    '--out', LaunchConfiguration('out'),
                    '--realtime', LaunchConfiguration('realtime'),
                    '--grasp-mode', LaunchConfiguration('grasp_mode'),
-                   '--perception', LaunchConfiguration('perception')],
+                   '--perception', LaunchConfiguration('perception'),
+                   '--ollama-url', LaunchConfiguration('ollama_url'),
+                   '--model', LaunchConfiguration('model')],
         parameters=[{'use_sim_time': True}],
         output='screen')
 

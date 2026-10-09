@@ -111,3 +111,12 @@ def test_perception_defaults_to_ground_truth_and_is_validated():
     assert parser.parse_args(['run', '--perception', 'vision']).perception == 'vision'
     with pytest.raises(SystemExit):
         parser.parse_args(['run', '--perception', 'lidar'])
+
+
+def test_instruct_task_and_planner_options_parse():
+    args = benchmark.build_parser().parse_args(
+        ['run', '--task', 'instruct', '--model', 'gemma4:e2b',
+         '--ollama-url', 'http://example:11434'])
+    assert args.task == 'instruct' and args.model == 'gemma4:e2b'
+    assert args.ollama_url == 'http://example:11434'
+    assert 'instruct' not in benchmark.TASKS          # 'all' never needs Ollama
