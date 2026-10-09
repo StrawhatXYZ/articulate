@@ -1,0 +1,11 @@
+# A spoken or typed instruction for the robot.
+string text
+---
+# done | answered | refused | not_understood | failed | planner_unavailable | cancelled
+string outcome
+string message
+string[] steps
+---
+# heard | planning | plan | step | done
+string stage
+string message

@@ -38,6 +38,7 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>shape_msgs</exec_depend>
   <exec_depend>so101_moveit_config</exec_depend>
+  <exec_depend>lab_interfaces</exec_depend>
   <exec_depend>lab_perception</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
@@ -53,6 +54,7 @@
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>geometry_msgs</test_depend>
+  <test_depend>lab_interfaces</test_depend>
   <test_depend>lab_perception</test_depend>
   <test_depend>launch</test_depend>
   <test_depend>launch_ros</test_depend>
