@@ -24,12 +24,24 @@ class Executor:
     def __init__(self, pick, scene, gripper, arm, memory: PlacementMemory):
         self._pick, self._scene, self._gripper, self._arm = pick, scene, gripper, arm
         self.memory = memory
+        self._last_look = None     # the latest look, until the robot moves again
 
     def observe(self) -> Tuple[Dict[str, PieceState], Observation]:
         """Look at the table; return the updated states and the observation."""
         observation = self._scene.observe()
         self.memory.observe(observation.poses)
-        return self.memory.states(), observation
+        self._last_look = (self.memory.states(), observation)
+        return self._last_look
+
+    def _look(self) -> Tuple[Dict[str, PieceState], Observation]:
+        """
+        Return the scene for the next step: the latest look if nothing has moved since.
+
+        Only the robot moves the pieces, so the look the plan was made from is
+        still current for the first step; after any motion, look again.
+        """
+        look, self._last_look = self._last_look, None
+        return look if look is not None else self.observe()
 
     def reset_arm(self) -> bool:
         """Let go, open partly and go home ignoring pieces and bins."""
@@ -58,8 +70,9 @@ class Executor:
 
     def _run_step(self, step: Step) -> str:
         if step.action == 'home':
+            self._last_look = None
             return '' if self.reset_arm() else 'could not go home'
-        states, observation = self.observe()
+        states, observation = self._look()
         state = states[step.piece]
         if state.status not in (TABLE, BOX):
             return f'{step.piece} is not visible'
@@ -69,6 +82,7 @@ class Executor:
         if xy is None:
             return note
         details: dict = {}
+        self._last_look = None                     # the robot is about to move things
         to_bin = step.target['kind'] == 'bin'
         try:
             failure = self._pick.pick_and_place(

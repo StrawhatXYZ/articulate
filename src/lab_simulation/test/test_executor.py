@@ -66,11 +66,16 @@ def test_cancel_takes_effect_between_steps(setup):
     assert ex.memory.states()['blue_cylinder'].status == TABLE
 
 
-def test_step_no_longer_valid_stops_the_plan(setup):
+def test_a_step_no_longer_valid_stops_the_plan(setup):
     world, ex = setup
     ex.observe()
-    world.hidden = {'green_block'}                  # the camera loses it
-    outcome, _ = run(ex, [Step('move', 'green_block', {'kind': 'bin'})])
+
+    def lose_green(stage, message):             # the camera loses it after step 1
+        if message.startswith('step 2/2'):
+            world.hidden = {'green_block'}
+
+    outcome = ex.run([Step('move', 'red_cube', {'kind': 'bin'}),
+                      Step('move', 'green_block', {'kind': 'bin'})], lose_green, lambda: False)
     assert outcome[0] == 'failed' and 'not visible' in outcome[1]
 
 
@@ -92,3 +97,12 @@ def test_a_placement_in_the_box_is_remembered_even_if_going_home_fails(setup, mo
     outcome, _ = run(ex, [Step('move', 'red_cube', {'kind': 'bin'})])
     assert outcome[0] == 'failed'
     assert ex.memory.states()['red_cube'].status == BOX
+
+
+def test_the_look_before_planning_is_reused_for_the_first_step_only(setup):
+    world, ex = setup
+    ex.observe()                                     # the look the plan was made from
+    looks = world.observations
+    run(ex, [Step('move', 'red_cube', {'kind': 'bin'}),
+             Step('move', 'blue_cylinder', {'kind': 'bin'})])
+    assert world.observations == looks + 1          # only the second step looks again
