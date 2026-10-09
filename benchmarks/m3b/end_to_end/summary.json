@@ -1,0 +1,57 @@
+{
+  "run": {
+    "robot": "so101",
+    "grasp_mode": "latched",
+    "perception": "vision",
+    "model": "gemma4:e2b",
+    "ollama_url": "http://host.docker.internal:11434",
+    "tasks": [
+      "instruct"
+    ],
+    "trials_per_task": 50,
+    "seed": 42,
+    "complete": true,
+    "unthrottled": true,
+    "wall_time_s": 1127.685633681991,
+    "sim_time_s": 1568.1299999999999,
+    "real_time_factor": 1.3905737141298147,
+    "trials_per_minute": 2.660315880947016,
+    "provenance": {
+      "git_commit": "05afb16186861273e85592ea165ffd6c84b71952",
+      "git_dirty": "true",
+      "arch": "aarch64",
+      "ros_distro": "jazzy",
+      "gazebo": "8.15.0",
+      "date": "2026-10-09T10:56:33+00:00"
+    }
+  },
+  "tasks": {
+    "instruct": {
+      "trials": 50,
+      "successes": 38,
+      "success_rate": 0.76,
+      "success_ci": [
+        0.6258705062480763,
+        0.8570274759812779
+      ],
+      "cycle_time_s": {
+        "n": 38,
+        "mean": 27.05444736842105,
+        "median": 24.85899999999998,
+        "p95": 49.77084999999999
+      },
+      "error_m": {
+        "n": 0,
+        "mean": null,
+        "median": null,
+        "p95": null
+      },
+      "failures": {
+        "execution": 4,
+        "infeasible": 4,
+        "outcome": 4
+      },
+      "disturbed": 0
+    }
+  }
+}
