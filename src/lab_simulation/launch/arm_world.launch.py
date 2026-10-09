@@ -86,6 +86,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'perception', default_value='false',
             description='Add the overhead RGB-D camera and the perception node'),
+        DeclareLaunchArgument(
+            'embedder', default_value='siglip',
+            description='Perception embedder: siglip, embeddinggemma or colour'),
     ]
     perception = IfCondition(LaunchConfiguration('perception'))
 
@@ -190,7 +193,8 @@ def generate_launch_description():
         package='lab_perception',
         executable='perception_node.py',
         prefix='/opt/lab-ai/bin/python',
-        parameters=[overhead_camera.perception_parameters(), {'use_sim_time': use_sim_time}],
+        parameters=[overhead_camera.perception_parameters(),
+                    {'embedder': LaunchConfiguration('embedder'), 'use_sim_time': use_sim_time}],
         condition=perception,
         output='screen')
 

@@ -27,6 +27,9 @@ PROMPT = 'a photo of a {}'
 # second label 0.030. The thresholds sit well below both.
 MIN_SCORE = 0.08
 MIN_MARGIN = 0.015
+# EmbeddingGemma 2 scores run higher (about 0.75 right, 0.65 wrong).
+GEMMA_MIN_SCORE = 0.5
+GEMMA_MIN_MARGIN = 0.03
 BIN_MASK_RADIUS = 0.07  # ignore anything inside a bin's footprint
 
 
@@ -79,4 +82,6 @@ def perception_parameters(embedder: str = 'siglip') -> Dict:
         'model_id': MODEL_ID,
         'min_score': MIN_SCORE,
         'min_margin': MIN_MARGIN,
+        'gemma_min_score': GEMMA_MIN_SCORE,
+        'gemma_min_margin': GEMMA_MIN_MARGIN,
     }

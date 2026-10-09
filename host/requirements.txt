@@ -1,0 +1,6 @@
+faster-whisper==1.2.1
+numpy==2.4.6
+sounddevice==0.5.6
+# GPU (CUDA 12) libraries for faster-whisper; without them it runs on the CPU.
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cudnn-cu12==9.27.0.42

@@ -150,6 +150,17 @@ def _move_failure(result: MoveResult) -> Optional[str]:
     return None
 
 
+def _approach_yaws(yaws: Optional[List[float]], piece_yaw: float) -> List[List[float]]:
+    """
+    Return closing yaws to try one by one when picking out of a bin.
+
+    Each allowed yaw (any quarter turn for a cylinder) and its half turn,
+    which puts the fixed and the moving jaw on opposite sides.
+    """
+    base = yaws if yaws is not None else [piece_yaw + k * math.pi / 2 for k in range(2)]
+    return [[yaw + turn] for yaw in base for turn in (0.0, math.pi)]
+
+
 def vertical_rotation(yaw: float) -> np.ndarray:
     """Return the grasp frame rotation pointing straight down, closing along yaw."""
     x = np.array([math.cos(yaw), math.sin(yaw), 0.0])
@@ -294,13 +305,16 @@ class PickPlaceTask:
         return q
 
     def _execute(self, piece, start: PiecePose, target, details: dict,
-                 aim_jaws: bool = False, nominal_grip: bool = False) -> Optional[str]:
+                 aim_jaws: bool = False, nominal_grip: bool = False,
+                 from_bin: bool = False) -> Optional[str]:
         """
         Pick piece from start and set it down at target (xy); return a failure or None.
 
         With aim_jaws the open jaws, rather than the piece, are centred on
         target: the piece is gripped off-centre (pressed against the fixed
-        jaw), and centring the jaws keeps them clear of a bin's walls.
+        jaw), and centring the jaws keeps them clear of a bin's walls. With
+        from_bin the piece is picked up from inside a bin, with the jaws only
+        partly open so they clear its walls.
         """
         # details['stage'] records how far the pick got, for failure analysis.
         # Approach: hover over the piece with the jaws across its narrow side,
@@ -308,19 +322,28 @@ class PickPlaceTask:
         details['stage'] = 'approach'
         yaws = piece.closing_yaws(start.yaw)
         grasp_xyz = (start.x, start.y, start.z)
-        try:
-            q_grasp, yaw = self._solve(grasp_xyz, yaws)
-            q_hover, _ = self._solve((start.x, start.y, start.z + layout.HOVER),
-                                     None if yaw is None else [yaw], q_grasp)
-        except Unreachable:
-            return 'unreachable'
-        if not self._gripper.release():
+        if not (self._gripper.release(BIN_RELEASE_RAD) if from_bin else self._gripper.release()):
             return 'timeout'
         self._scene.update_planning_scene(exclude=piece.name)
-        for q in (q_hover, q_grasp):
-            failure = self._move(q)
-            if failure:
-                return failure
+        # Inside a bin a jaw can meet a wall in one orientation and not in
+        # another: try every closing direction, and each jaw on either side,
+        # before giving up. A planning failure leaves the arm where it was.
+        failure = 'unreachable'
+        for attempt in _approach_yaws(yaws, start.yaw) if from_bin else [yaws]:
+            try:
+                q_grasp, yaw = self._solve(grasp_xyz, attempt)
+                q_hover, _ = self._solve((start.x, start.y, start.z + layout.HOVER),
+                                         None if yaw is None else [yaw], q_grasp)
+            except Unreachable:
+                continue
+            for q in (q_hover, q_grasp):
+                failure = self._move(q)
+                if failure:
+                    break
+            if failure != 'planning_failed':
+                break
+        if failure:
+            return failure
 
         # Close, and accept the grasp only if the jaws closed on this piece.
         details['stage'] = 'grasp'

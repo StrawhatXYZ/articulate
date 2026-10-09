@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Protocol, Sequence, Tuple
 import numpy as np
 
 DEFAULT_MODEL = 'google/siglip2-base-patch16-224'
+EMBEDDINGGEMMA_MODEL = 'google/embeddinggemma-2'
 
 
 class Embedder(Protocol):
@@ -99,6 +100,41 @@ class SiglipEmbedder:
                                      return_tensors='pt')
             features = self._features(self._model.get_text_features(**inputs))
         return _unit(features.numpy())
+
+
+class EmbeddingGemmaEmbedder:
+    """EmbeddingGemma 2 text and image embeddings in one space (sentence-transformers, CPU)."""
+
+    IMAGE_TEXT = '<|image|>'
+
+    def __init__(self, model_id: str = EMBEDDINGGEMMA_MODEL, prompt_name: str = 'Document',
+                 max_soft_tokens: int = 70):
+        """
+        Load the model in float32 (never float16); downloads it on first use.
+
+        max_soft_tokens is the image token budget (70, 140, 280...): cost grows
+        with it (about 1.3 s per crop at 70 on the CPU) and 70 already separates colours.
+        The weights ship in bfloat16, which most CPUs only emulate: float32 is
+        about four times faster.
+        """
+        import torch
+        from sentence_transformers import SentenceTransformer
+        self._model = SentenceTransformer(model_id, device='cpu',
+                                          model_kwargs={'dtype': torch.float32})
+        self._model[0].processor.image_processor.max_soft_tokens = max_soft_tokens
+        self._prompt_name = prompt_name
+
+    def embed_images(self, crops: Sequence[np.ndarray]) -> np.ndarray:
+        """Return one unit row per crop."""
+        from PIL import Image
+        rows = [self._model.encode({'text': self.IMAGE_TEXT, 'image': Image.fromarray(c)})
+                for c in crops]
+        return _unit(np.asarray(rows, dtype=float))
+
+    def embed_texts(self, texts: Sequence[str]) -> np.ndarray:
+        """Return one unit row per text."""
+        return _unit(np.asarray(self._model.encode(list(texts), prompt_name=self._prompt_name),
+                                dtype=float))
 
 
 class ColourEmbedder:

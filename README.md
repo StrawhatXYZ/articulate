@@ -187,6 +187,88 @@ and open <http://localhost:6080>. `task:=pick_place` places pieces on random
 spots instead. Without `realtime:=true` the benchmark runs
 several times faster than real time.
 
+### Talking to the robot (demo)
+
+Speak or type a request; three AI models and MoveIt turn it into arm motion:
+
+```
+"put the red cube back where it was"
+  -> Whisper            speech to text                  (Windows, RTX GPU, ~1 s)
+  -> Gemma 4 E2B        text + live scene -> JSON plan  (Windows, Ollama on the GPU, ~6 s)
+  -> safety check       every step validated            (container, command node)
+  -> EmbeddingGemma 2   finds the pieces in the camera  (container, CPU, ~10 s)
+  -> MoveIt             plans each collision-free move  (classical planner, not AI)
+  -> the arm
+```
+
+**One-time setup on Windows.** Docker Desktop with 10-12 GB of memory, the
+[Ollama](https://ollama.com) app with `ollama pull gemma4:e2b`, and the host
+venv:
+
+```bat
+py -m venv host\.venv
+host\.venv\Scripts\pip install -r host\requirements.txt
+```
+
+The container needs the PyTorch environment `/opt/lab-ai`. Images built from
+the current `Dockerfile` have it; an older container needs it installed once:
+
+```bash
+docker exec -u root ai-robotics-lab bash -c "apt-get update && apt-get install -y python3.12-venv && python3 -m venv --system-site-packages /opt/lab-ai && /opt/lab-ai/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.1 torchvision==0.29.1 && /opt/lab-ai/bin/pip install transformers==5.19.0 sentencepiece==0.2.2 sentence-transformers==6.1.0"
+```
+
+Packages installed this way live in the container only: `docker stop` /
+`docker start` keep them, but `stop-lab.sh` and `docker compose down` delete
+the container and them with it.
+
+**Run.** Start the robot in the container (wait for `[command]: ready`), open
+<http://localhost:6080>, then talk to it from Windows:
+
+```bat
+docker exec -it ai-robotics-lab bash -c "source /workspace/install/setup.bash && ros2 launch lab_simulation demo.launch.py"
+host\.venv\Scripts\python host\voice_command.py
+host\.venv\Scripts\python host\voice_command.py --text "put everything back"
+```
+
+Press Enter, speak, press Enter. Every line is printed with a timestamp:
+the transcript, the plan, and the robot's progress until `plan done`.
+
+| Option | Effect |
+|---|---|
+| `--text "..."` | Type instead of speaking |
+| `--no-brain` | Skip Gemma 4: the text goes to `/lab/instruction` (put a piece in its box, `go home`, `sort everything`) |
+| `--dry-run` | Print the transcript and plan only; nothing is sent |
+| `--no-watch` | Do not follow the robot's progress |
+| `--file x.wav` | Transcribe a recording |
+
+`demo.launch.py` arguments: `embedder:=embeddinggemma|siglip|keyword`,
+`perception:=vision|ground_truth`, `speed:=1.0` (arm speed; the benchmark uses
+0.5), `rviz:=true`.
+
+**What the brain can plan.** Gemma 4 (`host/brain.py`) reads the live
+`/lab/scene` and calls tools: move a piece to its box, back to where it
+started, next to another piece (left/right/front/back), to an area of the
+table, or swap two pieces on the table; go home; sort everything. Directions
+are the robot's: front is away from it, back towards it, left is +y.
+Examples that work: "put the red cube back where it was", "reset the table",
+"move the blue one next to the green block", "clean up the table",
+"lal cube ko uske box mein daal do". Unsafe or unrelated requests ("throw the
+cube on the floor") are refused and nothing is sent; only when Ollama cannot
+be reached does the text fall back to `/lab/instruction`. Test the brain
+without the robot: `host\.venv\Scripts\python host\brain.py "put the red cube back"`.
+
+**What the robot checks.** `command_node.py` validates the whole plan before
+anything moves (unknown piece, action or area, or no free spot gives
+`refused: step i/N: ...`). `targets.py` resolves each target to a spot that
+the arm can reach, clear of the boxes and at least 8 cm from other pieces.
+Picking a piece out of its box opens the jaws only partly and tries each jaw
+orientation until MoveIt finds one clear of the walls.
+
+**Limits.** A request takes 30-150 s, most of it arm motion. Swap needs both
+pieces on the table. Occasionally a pick out of a box finds no collision-free
+approach (`failed: ... planning_failed`); sending the request again usually
+works.
+
 ### Running the tests
 
 ```bash
@@ -370,6 +452,10 @@ into Gazebo and read by RViz and MoveIt, so they cannot drift apart.
 | `/lab/camera/{image,depth_image,camera_info}` | `sensor_msgs/msg/Image`, `CameraInfo` | Overhead RGB-D camera (perception only) |
 | `/lab/perception/request` | `std_msgs/msg/Empty` | Ask for one detection of the next frame |
 | `/lab/perception/objects` | `vision_msgs/msg/Detection3DArray` | Named objects: label, score, 3D pose |
+| `/lab/instruction` | `std_msgs/msg/String` | A sentence for the command node (old path: piece into its box, home, sort) |
+| `/lab/plan` | `std_msgs/msg/String` | JSON plan from the brain: `{"text", "steps": [...]}` |
+| `/lab/scene` | `std_msgs/msg/String` | JSON: each piece's xy, start xy, `in_bin`; the boxes; `busy` |
+| `/lab/instruction/status` | `std_msgs/msg/String` | Progress: `plan: N steps`, `step i/N`, `done`, `failed`, `refused`, `plan done` |
 | `/world/table_world/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | Teleport a piece (benchmark resets) |
 
 The bridge mapping lives in `config/bridge.yaml`.
@@ -440,6 +526,11 @@ ai-robotics-lab/
 │   ├── baseline/              # Step 1 baseline (3-DOF arm, suction)
 │   ├── step2/                 # Step 2 baseline (SO-101), and the comparison
 │   └── m3a/                   # M3a: sorting from the camera vs ground truth
+├── AGENTS.md                  # Guide for AI coding agents working on this repo
+├── host/                      # Runs on Windows, not in the container
+│   ├── voice_command.py       # Microphone -> Whisper -> brain -> /lab/plan
+│   ├── brain.py               # Gemma 4 E2B via Ollama: sentence + scene -> JSON plan
+│   └── requirements.txt
 ├── docs/superpowers/          # Design specs and implementation plans
 ├── LICENSE                    # Apache License 2.0
 ├── NOTICE                     # Copyright notice
@@ -451,13 +542,15 @@ ai-robotics-lab/
     │   ├── meshes/            # Upstream meshes, their licence and SOURCE.md
     │   └── tools/generate_xacro.py
     ├── so101_moveit_config/   # SRDF, IK, limits, OMPL, controllers, move_group launch
-    ├── lab_perception/        # Camera model, depth segmentation, SigLIP 2 naming, ROS node
+    ├── lab_perception/        # Camera model, depth segmentation, SigLIP 2 / EmbeddingGemma 2 naming, ROS node
     └── lab_simulation/        # The lab: world, tasks, benchmark
         ├── config/            # RViz, ros_gz_bridge, ros2_control
         ├── lab_simulation/    # Python package
         │   ├── so101_kinematics.py  # Forward and vertical-approach inverse kinematics
         │   ├── layout.py      # Pieces, workspace and seeded sampling
-        │   ├── tasks.py       # Reach and pick-and-place trials
+        │   ├── tasks.py       # Reach, pick-and-place and sort trials
+        │   ├── instruction.py # Sentence -> piece (EmbeddingGemma 2, keyword fallback)
+        │   ├── targets.py     # Plan target -> a safe, reachable table spot
         │   ├── metrics.py     # Statistics, reports and comparisons
         │   ├── arm.py         # Moves through MoveIt
         │   ├── gripper.py     # Jaw control and stall detection
@@ -465,8 +558,8 @@ ai-robotics-lab/
         │   ├── description.py # Builds the robot description
         │   ├── object_markers.py
         │   └── benchmark.py   # Benchmark command line
-        ├── launch/            # arm_world.launch.py, benchmark.launch.py
-        ├── scripts/           # benchmark.py, move_arm.py, object_markers.py
+        ├── launch/            # arm_world.launch.py, benchmark.launch.py, demo.launch.py
+        ├── scripts/           # benchmark.py, move_arm.py, object_markers.py, command_node.py
         ├── test/
         ├── urdf/lab_so101.urdf.xacro  # SO-101 on the table + ros2_control + grasp latch
         └── worlds/table_world.sdf     # Table, pieces, sorting boxes and lighting
@@ -522,6 +615,7 @@ Verified on 7 October 2026 on Apple Silicon (native arm64) with Docker Desktop.
 | MoveIt plans and executes every move around the table and pieces | Working |
 | Two-finger pick-and-place, visible in RViz | Working, 98% at baseline (latched), 73% friction-only |
 | Colour sorting into matching boxes | Working, 93% at baseline |
+| Spoken requests planned by Gemma 4 (put back, next to, reset, sort) | Working in the demo; 35/35 phrasings planned correctly offline |
 | Sorting from the camera alone (SigLIP 2 naming) | Working, 92% (ground truth 93%) |
 | Seeded benchmark with committed baselines | Working (see `benchmarks/`) |
 | Test suite (unit, consistency, linters) | Working, 650 checks passing |

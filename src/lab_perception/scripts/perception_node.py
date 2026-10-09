@@ -18,7 +18,8 @@ import time
 from lab_perception.camera import CameraModel
 from lab_perception.detector import detect
 from lab_perception.messages import detections_to_msg
-from lab_perception.naming import ColourEmbedder, LabelMatcher, SiglipEmbedder
+from lab_perception.naming import (ColourEmbedder, EMBEDDINGGEMMA_MODEL, EmbeddingGemmaEmbedder,
+                                   LabelMatcher, SiglipEmbedder)
 import message_filters
 import numpy as np
 import rclpy
@@ -52,15 +53,23 @@ class PerceptionNode(Node):
             ('height', [0.005, 0.07]), ('exclude_xy', [0.0]), ('exclude_radius', 0.0),
             ('labels', ['']), ('prompts', ['']), ('embedder', 'siglip'),
             ('model_id', 'google/siglip2-base-patch16-224'),
-            ('min_score', 0.0), ('min_margin', 0.0))}
+            ('min_score', 0.0), ('min_margin', 0.0),
+            ('gemma_min_score', 0.0), ('gemma_min_margin', 0.0))}
         self._params = p
         xy = p['exclude_xy']
         self._exclude = [((xy[i], xy[i + 1]), p['exclude_radius'])
                          for i in range(0, len(xy) - 1, 2)] if p['exclude_radius'] > 0 else []
-        embedder = ColourEmbedder() if p['embedder'] == 'colour' else SiglipEmbedder(
-            p['model_id'])
+        if p['embedder'] == 'colour':
+            embedder = ColourEmbedder()
+        elif p['embedder'] == 'embeddinggemma':
+            model_id = p['model_id']
+            embedder = EmbeddingGemmaEmbedder(
+                EMBEDDINGGEMMA_MODEL if 'siglip' in model_id else model_id)
+        else:
+            embedder = SiglipEmbedder(p['model_id'])
+        prefix = 'gemma_' if p['embedder'] == 'embeddinggemma' else ''
         self._matcher = LabelMatcher(embedder, dict(zip(p['labels'], p['prompts'])),
-                                     p['min_score'], p['min_margin'])
+                                     p[prefix + 'min_score'], p[prefix + 'min_margin'])
         self._camera = None
         self._frame = None
         self._requested = None      # time of the pending request, or None

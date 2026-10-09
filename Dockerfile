@@ -51,10 +51,11 @@ RUN apt-get update && apt-get install -y \
     && ln -sf /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz /usr/local/bin/gz \
     && python3 -m venv --system-site-packages /opt/lab-ai \
     && /opt/lab-ai/bin/pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu torch==2.14.1 \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.14.1 torchvision==0.29.1 \
     && /opt/lab-ai/bin/pip install --no-cache-dir \
         transformers==5.19.0 \
-        sentencepiece==0.2.2
+        sentencepiece==0.2.2 \
+        sentence-transformers==6.1.0
 
 COPY --chmod=755 scripts/start-desktop.sh /usr/local/bin/start-desktop.sh
 

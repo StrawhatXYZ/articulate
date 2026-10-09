@@ -46,6 +46,8 @@ def generate_launch_description():
         DeclareLaunchArgument('perception', default_value='ground_truth',
                               description='ground_truth (default) or vision: plan from the'
                                           ' overhead camera'),
+        DeclareLaunchArgument('embedder', default_value='siglip',
+                              description='Vision embedder: siglip, embeddinggemma or colour'),
     ]
 
     # Scoped, so the included launch's own perception argument (true/false)
@@ -54,6 +56,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(world_launch),
         launch_arguments={
             'rviz': LaunchConfiguration('rviz'),
+            'embedder': LaunchConfiguration('embedder'),
             'perception': PythonExpression(
                 ["'true' if '", LaunchConfiguration('perception'), "' == 'vision' else 'false'"]),
         }.items())])
