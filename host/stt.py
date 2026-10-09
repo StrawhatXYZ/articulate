@@ -1,6 +1,7 @@
 """Speech to text with the fastest engine for this machine."""
 
 import platform
+from typing import Optional
 
 MLX_MODELS = {'small': 'mlx-community/whisper-small-mlx',
               'turbo': 'mlx-community/whisper-large-v3-turbo'}
@@ -13,10 +14,10 @@ def choose_engine(system: str = platform.system(), machine: str = platform.machi
 
 
 class Transcriber:
-    """Whisper speech recognition; model 'small' (default) or 'turbo'."""
+    """Whisper speech recognition; model 'small' (default) or 'turbo'; language None = detect."""
 
-    def __init__(self, engine: str, model: str = 'small'):
-        self.engine = engine
+    def __init__(self, engine: str, model: str = 'small', language: Optional[str] = None):
+        self.engine, self.language = engine, language
         if engine == 'mlx':
             import mlx_whisper
             self._mlx, self._repo = mlx_whisper, MLX_MODELS.get(model, model)
@@ -30,6 +31,7 @@ class Transcriber:
     def transcribe(self, audio) -> str:
         """Return the text of audio (float32 16 kHz mono array, or a file path)."""
         if self.engine == 'mlx':
-            return self._mlx.transcribe(audio, path_or_hf_repo=self._repo)['text'].strip()
-        segments, _ = self._fw.transcribe(audio, vad_filter=True)
+            return self._mlx.transcribe(audio, path_or_hf_repo=self._repo,
+                                        language=self.language)['text'].strip()
+        segments, _ = self._fw.transcribe(audio, vad_filter=True, language=self.language)
         return ' '.join(s.text.strip() for s in segments).strip()

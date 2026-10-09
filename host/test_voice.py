@@ -80,3 +80,20 @@ def test_the_goal_conversion_keeps_every_character(tmp_path):
                           text=True, encoding='utf-8').stdout
     assert '\\ud' not in goal                     # no surrogate escapes for YAML to split
     assert json.loads(goal)['text'] == text
+
+
+def test_a_language_hint_reaches_the_speech_engine(monkeypatch):
+    seen = {}
+
+    class Fake:
+        def __init__(self, engine, model='small', language=None):
+            seen['language'] = language
+
+        def transcribe(self, audio):
+            return ''
+
+    monkeypatch.setattr(stt, 'Transcriber', Fake)
+    monkeypatch.setattr(voice, 'handle', lambda text, args: None)
+    voice.main(['--file', 'x.wav', '--language', 'hi'])
+    assert seen['language'] == 'hi'
+    assert voice.parser().parse_args([]).language is None      # default: detect

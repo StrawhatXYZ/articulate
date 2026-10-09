@@ -127,7 +127,10 @@ def parser() -> argparse.ArgumentParser:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--text', help='send this text instead of speaking')
     p.add_argument('--file', help='transcribe this audio file and send it')
-    p.add_argument('--model', default='small', help='Whisper model: small (default) or turbo')
+    p.add_argument('--model', default='small',
+                   help='Whisper model: small (default, fastest) or turbo (more accurate)')
+    p.add_argument('--language', help='language spoken, e.g. en, hi, te (default: detect);'
+                                      ' fixing it avoids mishearing')
     p.add_argument('--container', default='ai-robotics-lab', help='lab container name')
     return p
 
@@ -140,7 +143,7 @@ def main(argv=None) -> int:
         return 0
     engine = stt.choose_engine()
     log(f'loading Whisper ({engine}, {args.model}) ...')
-    transcriber = stt.Transcriber(engine, args.model)
+    transcriber = stt.Transcriber(engine, args.model, args.language)
     if args.file:
         handle(transcriber.transcribe(args.file), args)
         return 0
