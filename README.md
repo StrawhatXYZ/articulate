@@ -222,9 +222,10 @@ host terminal:
 
 ```bash
 ./enter-lab.sh
-ros2 launch lab_simulation demo.launch.py      # perception:=ground_truth, rviz:=false
+ros2 launch lab_simulation demo.launch.py      # perception:=ground_truth, rviz:=false, speed:=0.5
 
 host/.venv/bin/python host/voice.py            # press Enter, speak, press Enter
+host/.venv/bin/python host/voice.py --model turbo --language en   # more accurate hearing
 host/.venv/bin/python host/voice.py --text "swap the cube and the cylinder"
 ```
 
@@ -253,7 +254,14 @@ longer valid. Every request ends with one outcome: `done`, `answered`,
 is logged to `results/instructions.jsonl`.
 
 **Limits.** Each request stands alone: name the piece ("put the red cube
-back"), not "put it back". A request takes 15-40 s, mostly arm motion.
+back"), not "put it back". A request takes 15-40 s, mostly arm motion; the
+demo arm runs at 0.8 of its speed limits (the pick and sort benchmarks at
+0.5, so their numbers stay comparable). Whisper's `small` model can mishear
+accented speech ("sort" as "shut"): `--model turbo` and `--language` help.
+Before a demo on a 16 GB Mac, restart Docker Desktop and close spare browser
+tabs: when macOS swaps, planning slows from about 4 s to 6-9 s. What we tried
+to make requests faster, and what we kept, is in
+[`benchmarks/m3b-speed/`](benchmarks/m3b-speed/comparison.md).
 
 ### Running the tests
 
