@@ -1,0 +1,8 @@
+# Voice client on Windows and Linux (faster-whisper; NVIDIA GPU if present).
+#   py -m venv host\.venv && host\.venv\Scripts\pip install -r host\requirements.txt
+# For an NVIDIA GPU also install nvidia-cublas-cu12 and nvidia-cudnn-cu12;
+# without them Whisper runs on the CPU.
+faster-whisper==1.2.1
+numpy==2.4.6
+sounddevice==0.5.6
+pytest==8.4.2

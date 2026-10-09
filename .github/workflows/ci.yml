@@ -49,6 +49,9 @@ jobs:
           colcon test --event-handlers console_cohesion+
           colcon test-result --verbose
 
+      - name: Test the host voice client (no microphone or model needed)
+        run: python3 -m pytest -q host
+
   lint:
     name: Lint shell scripts and Dockerfile
     runs-on: ubuntu-24.04
