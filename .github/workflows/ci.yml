@@ -50,7 +50,7 @@ jobs:
           colcon test-result --verbose
 
       - name: Test the host voice client (no microphone or model needed)
-        run: python3 -m pytest -q host
+        run: python3 -m pytest -q src/ai-robotics-lab/host
 
   lint:
     name: Lint shell scripts and Dockerfile
