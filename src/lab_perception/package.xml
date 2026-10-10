@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>lab_perception</name>
-  <version>0.4.0</version>
+  <version>0.3.0</version>
   <description>
     Perception for the AI and Robotics Lab: finds objects on the table from an
     RGB-D camera's depth image and names them by matching image and text
