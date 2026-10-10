@@ -7,7 +7,8 @@ model returns, the answer is a plan, a refusal or an answer. The model never
 supplies coordinates; xy targets are created here only for swaps.
 """
 
-from typing import Dict, NamedTuple, Optional, Sequence, Tuple
+from types import MappingProxyType
+from typing import Dict, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 from lab_simulation import layout, targets
 from lab_simulation.memory import BOX, PieceState, TABLE
@@ -40,7 +41,7 @@ class Verdict(NamedTuple):
     steps: Tuple[Step, ...] = ()
     message: str = ''
     source: str = ''                            # who refused: 'model' or 'check'
-    final: Dict[str, object] = {}               # dry-run end state: 'box', (x, y) or None
+    final: Mapping[str, object] = MappingProxyType({})   # dry-run end: 'box', (x, y), None
     skipped: Tuple[str, ...] = ()               # steps left out as already done, and why
 
 
@@ -92,9 +93,10 @@ def _steps_from(call: ToolCall, states: Dict[str, PieceState]):
     if call.name == 'go_home':
         return [Step('home')]
     if call.name == 'sort_all':
-        # Pieces already in their bins become no-ops the dry run explains.
-        return [Step('move', n, {'kind': 'bin'}) for n in sorted(states)
-                if states[n].status in (TABLE, BOX)]
+        # Pieces already in their bins become no-ops the dry run explains;
+        # pieces nobody can see are left out, and said so.
+        return [Step('move', n, {'kind': 'bin'}) if states[n].status in (TABLE, BOX)
+                else ('unseen', n) for n in sorted(states)]
     if call.name == 'swap_pieces':
         return [('swap', _piece(_text(a, 'piece_a')), _piece(_text(a, 'piece_b')))]
     piece = _piece(_text(a, 'piece'))
@@ -170,7 +172,9 @@ def _dry_run(raw, states) -> Verdict:
             location[piece] = xy
 
     for index, item in enumerate(raw, 1):
-        if isinstance(item, Step) and item.action == 'home':
+        if isinstance(item, tuple) and item[0] == 'unseen':
+            skipped.append(f'{item[1]} is not visible')
+        elif isinstance(item, Step) and item.action == 'home':
             steps.append(item)
         elif isinstance(item, Step):
             move(item.piece, item.target, index)

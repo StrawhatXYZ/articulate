@@ -125,3 +125,9 @@ def test_instruct_task_and_planner_options_parse():
 def test_speed_option_defaults_to_the_benchmark_speed():
     assert benchmark.build_parser().parse_args(['run']).speed == 0.5
     assert benchmark.build_parser().parse_args(['run', '--speed', '0.8']).speed == 0.8
+
+
+def test_each_exit_reason_has_its_own_code():
+    codes = [benchmark.EXIT_OK, benchmark.EXIT_NO_SIMULATION, benchmark.EXIT_UNRESPONSIVE,
+             benchmark.EXIT_NO_PLANNER]
+    assert len(set(codes)) == len(codes)

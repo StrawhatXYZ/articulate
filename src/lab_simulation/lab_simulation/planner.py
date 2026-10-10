@@ -135,7 +135,9 @@ def parse_calls(message: dict) -> List[ToolCall]:
     """Return the tool calls in a reply: native, or written out as text."""
     calls = []
     for call in message.get('tool_calls') or []:
-        function = call.get('function', {}) if isinstance(call, dict) else {}
+        function = call.get('function') if isinstance(call, dict) else None
+        if not isinstance(function, dict):
+            continue                    # malformed: the check refuses an empty plan
         args = function.get('arguments')
         if isinstance(args, str):
             try:
@@ -145,7 +147,8 @@ def parse_calls(message: dict) -> List[ToolCall]:
         calls.append(ToolCall(function.get('name'), {} if args is None else args))
     if calls:
         return calls
-    for name, body in _TEXT_CALL.findall(message.get('content') or ''):
+    content = message.get('content')
+    for name, body in _TEXT_CALL.findall(content if isinstance(content, str) else ''):
         calls.append(ToolCall(name, dict(_TEXT_ARG.findall(body))))
     return calls
 

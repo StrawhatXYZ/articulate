@@ -21,13 +21,13 @@ from lab_simulation.arm import Arm, JointFeedback, VELOCITY_SCALING
 from lab_simulation.description import robot_description
 from lab_simulation.executor import Executor
 from lab_simulation.gripper import Gripper
-from lab_simulation.instructor import Instructor
+from lab_simulation.instructor import Instructor, InstructResult
 from lab_simulation.memory import PlacementMemory
 from lab_simulation.planner import DEFAULT_MODEL, DEFAULT_URL, Planner
 from lab_simulation.ros_util import sim_now, spin_until
 from lab_simulation.scene import Scene
 from lab_simulation.so101_kinematics import Kinematics
-from lab_simulation.tasks import PickPlaceTask
+from lab_simulation.tasks import PickPlaceTask, SimulationUnresponsive
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -54,11 +54,17 @@ def main() -> int:
     instructor = Instructor(planner, executor, log_path)
     log = node.get_logger()
 
-    ready = spin_until(node, lambda: sim_now(node) > 0 and arm.joint_positions() is not None
-                       and gripper.ready() and scene.has_poses() and scene.has_detections(),
-                       sim_timeout_s=float('inf'), wall_timeout_s=180.0) and arm.wait_for_server()
-    if not ready:
-        log.error('simulation not running')
+    try:
+        ready = spin_until(node, lambda: sim_now(node) > 0 and arm.joint_positions() is not None
+                           and gripper.ready() and scene.has_poses() and scene.has_detections(),
+                           sim_timeout_s=float('inf'), wall_timeout_s=180.0)
+    except SimulationUnresponsive:
+        ready = False
+    if not (ready and arm.wait_for_server()):
+        log.error('simulation not running: start it with '
+                  '"ros2 launch lab_simulation demo.launch.py"')
+        node.destroy_node()
+        rclpy.try_shutdown()
         return 1
     executor.reset_arm()
     executor.observe()
@@ -79,6 +85,9 @@ def main() -> int:
                 log.info(f'{stage}: {message}')
             result = instructor.run(handle.request.text, send,
                                     lambda: handle.is_cancel_requested)
+        except SimulationUnresponsive as error:
+            result = InstructResult('failed', f'Failed: the simulation stopped responding'
+                                    f' ({error}).', [], {})
         finally:
             instructor.end()
         if result.outcome == 'cancelled':

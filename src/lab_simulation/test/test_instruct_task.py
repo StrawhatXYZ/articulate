@@ -91,3 +91,25 @@ def test_blame_separates_a_full_table_from_a_check_rejection():
     assert InstructTask._blame({C.R: 'bin'}, full) == 'infeasible'
     assert InstructTask._blame({C.R: 'bin'}, bad) == 'check'
     assert InstructTask._blame(C.REFUSE, unsafe_done) == 'planner'
+
+
+def test_the_scene_settles_before_the_starting_state_is_recorded(lab_kinematics, monkeypatch):
+    index = next(i for i, c in enumerate(C.E2E) if c.setup)
+    planner = Scripted([ToolCall('move_piece', {'piece': 'red_cube', 'target': 'start'})])
+    world, task = make_task(lab_kinematics, planner)
+    settled, moves_at_instruction = [], []
+    original = world.wait_settled
+
+    def wait_settled(*args):
+        settled.append(len(world.moves))
+        return original()
+
+    def instruct(*args):
+        moves_at_instruction.append(len(world.moves))
+        raise RuntimeError('stop here')
+
+    monkeypatch.setattr(world, 'wait_settled', wait_settled)
+    monkeypatch.setattr(task._instructor, 'run', instruct)
+    with pytest.raises(RuntimeError):
+        task.run(random.Random(0), index)
+    assert settled[-1] == moves_at_instruction[0]      # settled after the setup's last move

@@ -88,3 +88,11 @@ def test_nothing_to_do_explains_itself():
     r, ex, _ = run(FakePlanner(reply(move)), Boxed())
     assert r.outcome == 'done' and ex.ran == []
     assert r.message == 'Nothing to do: red_cube is already in its box.'
+
+
+def test_a_stalled_simulation_is_raised_not_hidden_as_a_failed_instruction():
+    from lab_simulation.tasks import SimulationUnresponsive
+    import pytest
+    with pytest.raises(SimulationUnresponsive):
+        Instructor(FakePlanner(SimulationUnresponsive('no joint states')), FakeExecutor()).run(
+            'go home', lambda *a: None, lambda: False)

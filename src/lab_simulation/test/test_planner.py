@@ -107,3 +107,10 @@ def test_a_server_dying_mid_request_is_unavailable_not_a_crash():
     fake = Fake(['drop'])
     reply = Planner(fake.url).plan('go home', STATES)
     assert reply.error == 'unavailable'
+
+
+def test_malformed_replies_parse_to_nothing_rather_than_crash():
+    for message in ({'tool_calls': [{'function': None}]}, {'tool_calls': [None, 'x']},
+                    {'tool_calls': None, 'content': None}, {'content': 7}):
+        calls = parse_calls(message)
+        assert all(isinstance(c.args, dict) or c.args is not None for c in calls)

@@ -28,6 +28,7 @@ from .tasks import GRASP_MODES, SimulationUnresponsive, TrialResult
 EXIT_OK = 0
 EXIT_NO_SIMULATION = 2
 EXIT_UNRESPONSIVE = 3
+EXIT_NO_PLANNER = 4     # instruct: Ollama unreachable or the model missing
 UNTHROTTLED_RTF = 1000
 ROBOT = 'so101'
 TASKS = ('reach', 'pick_place', 'sort')   # 'all'; instruct (needs Ollama) runs on its own
@@ -169,7 +170,7 @@ def run(args) -> int:
         print(f'planner not ready: {problem}', file=sys.stderr)
         node.destroy_node()
         rclpy.try_shutdown()
-        return EXIT_NO_SIMULATION
+        return EXIT_NO_PLANNER
 
     # Uncapped by default for throughput; real time when someone is watching.
     rtf_set = False if args.realtime else set_real_time_factor(UNTHROTTLED_RTF)

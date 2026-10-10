@@ -114,3 +114,16 @@ def test_a_plan_with_nothing_left_to_do_says_why():
     assert v.kind == 'plan' and v.steps == ()
     assert v.skipped == ('blue_cylinder is already in its box',
                          'green_block is already in its box', 'red_cube is already in its box')
+
+
+def test_sort_all_names_the_pieces_it_cannot_see():
+    v = check([call('sort_all')], states(green_block=UNKNOWN))
+    assert [s.piece for s in v.steps] == ['blue_cylinder', 'red_cube']
+    assert 'green_block is not visible' in v.skipped
+
+
+def test_a_verdict_cannot_be_changed_through_its_default_final():
+    from lab_simulation.plan_check import Verdict
+    import pytest
+    with pytest.raises(TypeError):
+        Verdict('refuse').final['red_cube'] = 'box'

@@ -15,6 +15,7 @@ from typing import Callable, List, NamedTuple, Optional
 
 from lab_simulation.plan_check import check, describe_step
 from lab_simulation.planner import describe_scene
+from lab_simulation.tasks import SimulationUnresponsive
 
 OUTCOMES = ('done', 'answered', 'refused', 'not_understood', 'failed',
             'planner_unavailable', 'cancelled')
@@ -56,6 +57,8 @@ class Instructor:
         record = {'text': text, 'time': time.time()}
         try:
             result = self._run(text, feedback, cancelled, record)
+        except SimulationUnresponsive:
+            raise                       # the simulation stopped: the caller decides
         except Exception as error:      # noqa: BLE001  the action must always answer
             record['traceback'] = traceback.format_exc()
             result = InstructResult('failed', f'Failed: internal error ({error}).', [], record)

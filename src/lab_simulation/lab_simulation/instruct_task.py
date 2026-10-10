@@ -58,6 +58,7 @@ class InstructTask:
             if outcome != 'done':
                 details['setup'] = message
                 return TrialResult(self.name, index, False, 'setup', 0.0, details=details)
+        self._scene.wait_settled()                 # a piece just dropped in a bin may rock
         before = self._truth()
         result = self._instructor.run(case.text, _quiet, _never)
         self._scene.wait_settled()
