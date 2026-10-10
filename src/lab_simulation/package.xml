@@ -4,7 +4,7 @@
   <name>lab_simulation</name>
   <version>0.3.0</version>
   <description>
-    Gazebo simulation for the AI and Robotics Lab: the SO-101 arm on a table
+    Gazebo simulation for Articulate: the SO-101 arm on a table
     with graspable pieces, driven by ros2_control and MoveIt, plus the
     pick-and-place benchmark and a scripted joint check.
   </description>

@@ -7,7 +7,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-CONTAINER=ai-robotics-lab
+CONTAINER=articulate
 DESKTOP_URL=http://localhost:6080
 
 if ! docker info > /dev/null 2>&1; then
@@ -34,7 +34,7 @@ docker exec "${CONTAINER}" bash -c \
 
 cat <<EOF
 
-AI & Robotics Lab is ready.
+Articulate is ready.
 
   Desktop (Gazebo, RViz):  ${DESKTOP_URL}
 

@@ -1,11 +1,14 @@
-# AI & Robotics Lab
+# Articulate
 
-[![CI](https://github.com/StrawhatXYZ/ai-robotics-lab/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/StrawhatXYZ/ai-robotics-lab/actions/workflows/ci.yml)
+**Robot arms that understand plain language.**
+
+[![CI](https://github.com/StrawhatXYZ/articulate/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/StrawhatXYZ/articulate/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-A containerised ROS 2 simulation lab for building an **instructed grasp**
-system: a robot arm that picks up objects on spoken or written command,
-developed in simulation first.
+Articulate is an open robotics lab, by Straw Hat Labs, for robot arms you
+instruct in natural language. It is a containerised ROS 2 simulation for
+building an **instructed grasp** system: a robot arm that picks up objects
+on spoken or written command, developed in simulation first.
 
 It simulates the **SO-101**, the low-cost open-source arm the lab plans to
 buy, built from its official model. The arm picks pieces up with its own
@@ -59,7 +62,7 @@ The helper scripts are bash scripts, so run them from a **WSL 2** terminal
 1. Install Docker Desktop and enable *Use the WSL 2 based engine* and
    *WSL integration* for your distribution.
 2. Clone the repository **inside the WSL file system** (for example
-   `~/ai-robotics-lab`), not under `C:\` or `/mnt/c`. Bind mounts from the
+   `~/articulate`), not under `C:\` or `/mnt/c`. Bind mounts from the
    Windows file system are much slower.
 3. Run `./start-lab.sh` and the other commands exactly as on macOS or Linux.
    <http://localhost:6080> opens in your normal Windows browser.
@@ -68,7 +71,7 @@ Without WSL, the same steps can be run directly from PowerShell:
 
 ```powershell
 docker compose up -d --build
-docker exec -it ai-robotics-lab bash    # then use the in-container commands below
+docker exec -it articulate bash    # then use the in-container commands below
 ```
 
 The repository's `.gitattributes` forces LF line endings, so a Windows Git
@@ -433,7 +436,7 @@ intervals read "not significant"); other rows have no test and read
 task sets are flagged.
 
 ```bash
-docker exec ai-robotics-lab bash -c 'source /workspace/install/setup.bash && ros2 run lab_simulation benchmark.py compare /workspace/results/A /workspace/results/B'
+docker exec articulate bash -c 'source /workspace/install/setup.bash && ros2 run lab_simulation benchmark.py compare /workspace/results/A /workspace/results/B'
 ```
 
 ## Architecture
@@ -533,7 +536,7 @@ Classic. The **friction** mode adds nothing and is benchmarked for the record
 ## Project structure
 
 ```
-ai-robotics-lab/
+articulate/
 ├── .github/workflows/
 │   ├── ci.yml                 # Build, test, lint and benchmark smoke test
 │   └── docker.yml             # Image build check
@@ -624,7 +627,7 @@ The comment there explains how to update it.
 |---|---|
 | `start-lab.sh` reports Docker is not running | Start Docker Desktop and retry. |
 | noVNC desktop is completely black | Nothing is running yet. Launch `ros2 launch lab_simulation arm_world.launch.py` and RViz appears. |
-| <http://localhost:6080> does not load | Run `docker logs ai-robotics-lab`. Restart with `./stop-lab.sh && ./start-lab.sh`. |
+| <http://localhost:6080> does not load | Run `docker logs articulate`. Restart with `./stop-lab.sh && ./start-lab.sh`. |
 | `move_arm.py` stays on "waiting for /joint_states" | The simulation is not running. Start the launch file in another terminal first. |
 | `move_arm.py` reports a pose "not reached" | The sim may be running slowly. Check the real-time factor with `gz topic -e -t /world/table_world/stats`. |
 | `move_group` prints "No 3D sensor plugin(s) defined for octomap updates" | Expected: the lab has no depth camera yet. |

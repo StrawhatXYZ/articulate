@@ -13,7 +13,7 @@ def test_engine_choice():
 
 def test_goal_command_passes_text_without_shell_quoting():
     text = 'put the "red" cube\nin it\'s box; rm -rf / $(x) నీలం'
-    cmd = voice.goal_command(text, 'ai-robotics-lab')
+    cmd = voice.goal_command(text, 'articulate')
     assert cmd[:2] == ['docker', 'exec']
     assert f'LAB_TEXT={text}' in cmd           # passed as one argv entry, never through a shell
     assert all(text not in part for part in cmd if not part.startswith('LAB_TEXT='))

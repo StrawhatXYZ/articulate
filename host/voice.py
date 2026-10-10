@@ -131,7 +131,7 @@ def parser() -> argparse.ArgumentParser:
                    help='Whisper model: small (default, fastest) or turbo (more accurate)')
     p.add_argument('--language', help='language spoken, e.g. en, hi, te (default: detect);'
                                       ' fixing it avoids mishearing')
-    p.add_argument('--container', default='ai-robotics-lab', help='lab container name')
+    p.add_argument('--container', default='articulate', help='lab container name')
     return p
 
 

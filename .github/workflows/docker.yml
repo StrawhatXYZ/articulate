@@ -27,4 +27,4 @@ jobs:
           context: .
           platforms: linux/amd64
           push: false
-          tags: ai-robotics-lab:ci
+          tags: articulate:ci

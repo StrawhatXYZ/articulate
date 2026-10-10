@@ -1,1 +1,1 @@
-"""Perception for the AI and Robotics Lab."""
+"""Perception for Articulate."""

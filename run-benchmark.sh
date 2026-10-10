@@ -13,7 +13,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-CONTAINER="${CONTAINER:-ai-robotics-lab}"
+CONTAINER="${CONTAINER:-articulate}"
 TASK="${TASK:-all}"
 TRIALS="${TRIALS:-100}"
 SEED="${SEED:-42}"

@@ -9,7 +9,7 @@ this file covers how to work on it without breaking it. First written by
 
 | Part | Runs in | Python |
 |---|---|---|
-| Simulation, MoveIt, RViz, ROS 2 nodes (`src/`) | Docker container `ai-robotics-lab` | `/usr/bin/python3` (ROS) |
+| Simulation, MoveIt, RViz, ROS 2 nodes (`src/`) | Docker container `articulate` | `/usr/bin/python3` (ROS) |
 | Perception node (PyTorch, SigLIP 2) | Same container | `/opt/lab-ai/bin/python` (venv, system site packages) |
 | Instruction node (planner, safety check, executor) | Same container | `/usr/bin/python3` (standard library HTTP only) |
 | Gemma 4 E2B (the planner's model) | Ollama on the host, reached at `http://host.docker.internal:11434` | – |

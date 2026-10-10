@@ -3,7 +3,7 @@
 <package format="3">
   <name>lab_interfaces</name>
   <version>0.3.0</version>
-  <description>Interfaces of the AI and Robotics Lab: the Instruct action.</description>
+  <description>Interfaces of Articulate: the Instruct action.</description>
   <maintainer email="sandeep@strawhat.xyz">Sandeep Donepudi</maintainer>
   <license>Apache-2.0</license>
 

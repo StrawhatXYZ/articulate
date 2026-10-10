@@ -1,1 +1,1 @@
-"""Simulation, kinematics and benchmark tools for the AI & Robotics Lab."""
+"""Simulation, kinematics and benchmark tools for Articulate."""

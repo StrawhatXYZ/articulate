@@ -4,7 +4,7 @@
   <name>lab_perception</name>
   <version>0.3.0</version>
   <description>
-    Perception for the AI and Robotics Lab: finds objects on the table from an
+    Perception for Articulate: finds objects on the table from an
     RGB-D camera's depth image and names them by matching image and text
     embeddings (open vocabulary).
   </description>

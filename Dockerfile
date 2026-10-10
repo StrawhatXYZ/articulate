@@ -1,4 +1,4 @@
-# AI & Robotics Lab: ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2, with an
+# Articulate: ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2, with an
 # in-container virtual desktop (Xvfb + Openbox + x11vnc + noVNC).
 #
 # The base image is pinned by its multi-architecture index digest, so builds
