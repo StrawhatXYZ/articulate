@@ -1,0 +1,16 @@
+name: Idea or feature request
+description: Suggest something the lab should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: The task or question you have, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How it could work
+      description: Optional. An approach, and how we could measure that it works.

@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as the README says it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The exact commands (and spoken or typed instruction, if any).
+      placeholder: |
+        ./start-lab.sh
+        ros2 launch lab_simulation demo.launch.py
+        host/.venv/bin/python host/voice.py --text "..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output, for example the instruction node's lines or results/instructions.jsonl.
+      render: text
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Host OS and chip, Docker version, commit or release.
+      placeholder: macOS 15 on Apple M4, Docker Desktop 4.x, v0.3.0
+    validations:
+      required: true
