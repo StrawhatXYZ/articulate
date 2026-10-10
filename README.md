@@ -684,6 +684,27 @@ safety check → MoveIt plans a path → arm moves in Gazebo → success or safe
 - [ros_gz bridge](https://github.com/gazebosim/ros_gz/tree/jazzy/ros_gz_bridge)
 - [MoveIt 2 tutorials](https://moveit.picknik.ai/main/doc/tutorials/getting_started/getting_started.html)
 
+## Third-party models
+
+These are downloaded on first use, not distributed with this repository.
+Each comes with its own licence and terms; check them before you use the
+lab for anything beyond research and learning.
+
+| Model | Used for | Where its licence is |
+|---|---|---|
+| SigLIP 2 (`google/siglip2-base-patch16-224`) | Naming objects in the camera image | Its Hugging Face model card |
+| Gemma 4 E2B (`gemma4:e2b`) | Planning instructions | Its Ollama library page and Google's Gemma terms |
+| Whisper (`small`, `large-v3-turbo`) | Speech to text | The mlx-community / OpenAI model cards |
+
+The SO-101 arm model is included (Apache-2.0, TheRobotStudio); see
+[NOTICE](NOTICE).
+
+## Contributing and security
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[code of conduct](CODE_OF_CONDUCT.md). To report a security problem, follow
+[SECURITY.md](SECURITY.md) rather than opening a public issue.
+
 ## License
 
 Copyright 2026 Straw Hat Labs. Licensed under the

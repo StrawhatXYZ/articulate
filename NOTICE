@@ -2,3 +2,17 @@ AI & Robotics Lab
 Copyright 2026 Straw Hat Labs
 
 Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes third-party material:
+
+- SO-101 robot arm model (meshes and URDF) from TheRobotStudio's SO-ARM100
+  repository, https://github.com/TheRobotStudio/SO-ARM100, licensed under
+  the Apache License, Version 2.0. Copied unmodified into
+  src/so101_description/meshes/ and src/so101_description/urdf/upstream/;
+  see src/so101_description/meshes/SOURCE.md and the LICENSE file there.
+
+Models and software that users download or install separately (not
+distributed with this repository) keep their own licences: ROS 2, Gazebo,
+MoveIt 2, PyTorch, Hugging Face transformers, the SigLIP 2 vision model,
+the Gemma 4 language model (via Ollama), and Whisper speech models. See
+the README's "Third-party models" section.
