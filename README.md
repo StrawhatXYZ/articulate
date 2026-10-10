@@ -207,8 +207,6 @@ several times faster than real time.
 Type or say an instruction; the robot plans it, checks it and carries it out
 in the simulation, or explains why not.
 
-![Real exchanges: a Hindi instruction carried out, a question answered, a placement next to another piece, and two refusals with reasons](docs/media/conversation.png)
-
 ```
 "put the red cube back where it was"
   -> Whisper           speech to text                      (host, ~0.5 s on an M4)
@@ -249,8 +247,7 @@ happen. Without the voice client, send a goal from the container:
 (picking it out of the box, from where the robot remembers putting it);
 put it next to another piece, on a given side; move it to an area of the
 table; swap two pieces; sort everything; go home; answer questions about the
-table ("which pieces are in their boxes?"). Other languages work through the
-model ("lal cube ko uske box mein daal do"). Directions are the robot's:
+table ("which pieces are in their boxes?"). Directions are the robot's:
 front is away from it. The boxes fill the robot's left, so the free table is
 a thin strip: an area is a side along it (left, center, right) or a depth
 across it (front, back), and each third of the strip holds about one piece.
