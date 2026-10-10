@@ -1,6 +1,6 @@
 # Step 1: Native Image, Pick-and-Place and Benchmark Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Implementation plan. Tasks were carried out in order, each test-first; checkboxes (`- [ ]`) track progress.
 
 **Goal:** Run the lab natively on arm64, let the 3-DOF arm pick and place pieces with a simulated suction gripper (visible in RViz), and add a seeded benchmark that produces a committed baseline for all later "10x" claims.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** ROS 2 Jazzy, Gazebo Harmonic (gz-sim 8), ros_gz_bridge, rclpy, Python 3.12 (stdlib only), pytest, Docker (`ros:jazzy` multi-arch), GitHub Actions.
 
-**Spec:** `docs/superpowers/specs/2026-10-05-step1-benchmark-native-image-design.md`
+**Spec:** `docs/design/specs/2026-10-05-step1-benchmark-native-image-design.md`
 
 ## Global Constraints
 
@@ -19,7 +19,7 @@
 - Benchmarks lift the real-time cap with `set_physics real_time_factor: 1000`; interactive launches keep the cap.
 - Seeding: each task uses `random.Random(f'{seed}-{task_name}')`. Baseline: seed 42, 100 trials per task.
 - Python: stdlib only in `lab_simulation`; ament flake8 style (single quotes, max line 99, Google import order) and pep257 must pass.
-- Commits: Conventional Commits; identity `Sandeep Donepudi <sandeep@strawhat.xyz>` (already set repo-locally); **no Claude/co-author trailers**; never commit `CLAUDE.md`.
+- Commits: Conventional Commits; identity `Sandeep Donepudi <sandeep@strawhat.xyz>`.
 - Every commit must build and pass its own tests.
 
 ## Review Focus
@@ -2975,6 +2975,3 @@ git push
 
 Expected: `lab_test` 0 failures; CI green.
 
-- [ ] **Step 7: Update local notes (not committed)**
-
-Update `CLAUDE.md`: the test count, the native image (remove the amd64 emulation facts), the Gazebo GUI result, `run-benchmark.sh`, and that `move_arm.py`/benchmark runs must not overlap. Confirm `git status` does not list `CLAUDE.md`.

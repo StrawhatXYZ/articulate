@@ -1,6 +1,6 @@
 # M3b Language Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Implementation plan. Tasks were carried out in order, each test-first; checkboxes (`- [ ]`) track progress.
 
 **Goal:** A typed or spoken instruction is planned by Gemma 4 E2B, checked by a deterministic safety check, and executed by the simulated SO-101, with planner and end-to-end baselines committed.
 
@@ -8,11 +8,11 @@
 
 **Tech Stack:** ROS 2 Jazzy (rclpy actions, rosidl), Gazebo Harmonic, MoveIt 2, Ollama 0.33 + `gemma4:e2b` on the host, mlx-whisper / faster-whisper on the host, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-m3b-language-design.md`
+**Spec:** `docs/design/specs/2026-10-09-m3b-language-design.md`
 
 ## Global Constraints
 
-- Conventional Commits, one commit per task, each builds and passes its tests; identity `Sandeep Donepudi <sandeep@strawhat.xyz>`; no Claude attribution; never commit `CLAUDE.md`.
+- Conventional Commits, one commit per task, each builds and passes its tests; identity `Sandeep Donepudi <sandeep@strawhat.xyz>`.
 - Commits carrying PR #3 code add `Co-authored-by: MunuriGangadhar <87684192+MunuriGangadhar@users.noreply.github.com>` (no personal e-mail addresses).
 - Model `gemma4:e2b`; Ollama URL default `http://host.docker.internal:11434`; `num_predict` 1024; `temperature` 0; `num_ctx` 4096; thinking on (Ollama default; never send `think: false`); timeout 30 s; one retry.
 - The model never supplies coordinates; `xy` targets are created only inside `plan_check` (swaps).
@@ -20,7 +20,7 @@
 - Benchmark speed stays `arm.VELOCITY_SCALING` 0.5; `arm.py` is not changed.
 - Dockerfile unchanged (the planner uses `urllib`); no EmbeddingGemma, `sentence-transformers` or `torchvision`.
 - No `/lab/plan`, `/lab/scene` or `/lab/instruction` topics.
-- `colcon test` must pass (650 checks today, more after this plan); Hadolint/ShellCheck as in CLAUDE.md.
+- `colcon test` must pass (650 checks today, more after this plan); Hadolint/ShellCheck at CI's thresholds.
 - The 42 held-out planner cases (spike TEST set) are frozen: never edited, never used to tune the prompt.
 
 ## Review Focus
@@ -1901,9 +1901,8 @@ def test_summary_counts_by_category():
 **Files:**
 - Modify: `README.md` (Talking to the robot: setup on macOS and Windows — Ollama, `ollama pull gemma4:e2b`, host venv per platform; `demo.launch.py`; `voice.py` options; what it can do; outcomes; limits; results table; topics/actions table: `/lab/instruct`; repository tree: `lab_interfaces`, `host/`; roadmap: M3b done)
 - Create: `AGENTS.md` (rewritten from PR #3: what runs where on macOS and Windows; commands; code conventions; the action interface; safety rules — "never bypass `plan_check`; the model never supplies coordinates"; gotchas: one simulation at a time, Gemma thinks by default, Ollama must be reachable at `host.docker.internal`)
-- Modify (local only, never committed): `CLAUDE.md` (M3b facts: Gemma 4 E2B thinks by default; cap 1024; regions are inside the free sector; new check count)
 
 - [ ] **Step 1: Write the docs.** Every command in README/AGENTS.md is run once to confirm it works as written.
 - [ ] **Step 2: Full verification.** `colcon build && colcon test && colcon test-result --verbose` (record the new check count); `python3 -m pytest host -q`; ShellCheck `./*.sh scripts/*.sh`; Hadolint at CI threshold; `move_arm.py` exits 0 in a fresh launch.
 - [ ] **Step 3: Commit** `git commit -m "docs: document talking to the robot (M3b)"`.
-- [ ] **Step 4: Whole-branch review**, push `m3b-language`, open the PR ("M3b: plan spoken instructions with Gemma 4 E2B behind a safety check", body: summary, results, credit to PR #3 and @MunuriGangadhar, test plan; no Claude attribution), wait for CI green, then ask the user before merging and before closing PR #3 (with a thank-you comment linking the new PR).
+- [ ] **Step 4: Whole-branch review**, push `m3b-language`, open the PR ("M3b: plan spoken instructions with Gemma 4 E2B behind a safety check", body: summary, results, credit to PR #3 and @MunuriGangadhar, test plan), wait for CI green, then ask the maintainer before merging and before closing PR #3 (with a thank-you comment linking the new PR).

@@ -553,7 +553,7 @@ ai-robotics-lab/
 │   ├── step2/                 # Step 2 baseline (SO-101), and the comparison
 │   ├── m3a/                   # M3a: sorting from the camera vs ground truth
 │   └── m3b/                   # M3b: instruction following (planner, end to end)
-├── docs/superpowers/          # Design specs and implementation plans
+├── docs/design/              # Design specs and implementation plans, per milestone
 ├── LICENSE                    # Apache License 2.0
 ├── NOTICE                     # Copyright notice
 ├── scripts/
