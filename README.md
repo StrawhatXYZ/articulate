@@ -5,6 +5,11 @@
 [![CI](https://github.com/StrawhatXYZ/articulate/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/StrawhatXYZ/articulate/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+![Articulate: you say "put the red cube in its box" and the simulated arm does it; you say "throw the green block on the floor" and it refuses](docs/media/demo.gif)
+
+<sub>A real run in the simulation, sped up. The side panel shows the robot's own
+progress messages as they arrived.</sub>
+
 Articulate is an open robotics lab, by Straw Hat Labs, for robot arms you
 instruct in natural language. It is a containerised ROS 2 simulation for
 building an **instructed grasp** system: a robot arm that picks up objects
@@ -131,6 +136,8 @@ ros2 launch lab_simulation arm_world.launch.py [argument:=value ...]
 
 ### Seeing the table
 
+![The overhead camera's view with each piece ringed and named by the robot, and its measured position](docs/media/robot-view.png)
+
 ```bash
 ros2 launch lab_simulation arm_world.launch.py perception:=true
 ros2 topic echo /lab/perception/objects     # in a second terminal
@@ -199,6 +206,8 @@ several times faster than real time.
 
 Type or say an instruction; the robot plans it, checks it and carries it out
 in the simulation, or explains why not.
+
+![Real exchanges: a Hindi instruction carried out, a question answered, a placement next to another piece, and two refusals with reasons](docs/media/conversation.png)
 
 ```
 "put the red cube back where it was"
